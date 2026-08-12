@@ -146,6 +146,45 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    fun run_continuityNoIssues_keepsOriginalChapter() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰，年龄16"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                // 无问题时仅输出简短报告，不输出修正后章节
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节原始正文"
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val events = orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO
+            ),
+            session = session
+        ).toList()
+
+        val continuity = events.filterIsInstance<PipelineEvent.ContinuityResult>().single()
+        assertThat(continuity.issues).isEmpty()
+        // 无修正章节时保留原章节正文，而不是把报告文本当正文
+        assertThat(continuity.correctedText).contains("章节原始正文")
+        assertThat(continuity.correctedText).doesNotContain("无设定冲突")
+        // 润色基于原始正文继续，管线最终完成
+        assertThat(events.any { it is PipelineEvent.Completed }).isTrue()
+        assertThat(session.state.value.phase).isEqualTo(PipelinePhase.COMPLETED)
+    }
+
+    @Test
     fun run_emitsStateChanged_phaseAdvancesBeyondIdle() = runTest {
         val orchestrator = buildOrchestrator(emptyMap())
         val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)

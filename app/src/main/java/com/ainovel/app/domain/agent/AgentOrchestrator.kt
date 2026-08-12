@@ -380,17 +380,24 @@ class AgentOrchestrator(
         val reportIdx = output.indexOf("## 一致性报告")
         val correctedIdx = output.indexOf("## 修正后章节")
 
-        if (reportIdx >= 0 && correctedIdx > reportIdx) {
-            val reportSection = output.substring(reportIdx, correctedIdx)
+        if (reportIdx >= 0) {
+            val reportSection = if (correctedIdx > reportIdx) {
+                output.substring(reportIdx, correctedIdx)
+            } else {
+                output.substring(reportIdx)
+            }
             reportSection.lineSequence().forEach { line ->
                 val t = line.trim()
                 if (t.startsWith("- ") && !t.contains("无设定冲突")) {
                     issues += t.removePrefix("- ")
                 }
             }
-            val corrected = output.substring(correctedIdx + "## 修正后章节".length).trim()
-            return issues to corrected.ifBlank { fallback }
         }
-        return issues to output.trim()
+        // 只有发现问题时模型才输出修正后章节；未输出则保留原章节正文
+        if (correctedIdx >= 0) {
+            val corrected = output.substring(correctedIdx + "## 修正后章节".length).trim()
+            if (corrected.isNotBlank()) return issues to corrected
+        }
+        return issues to fallback
     }
 }
