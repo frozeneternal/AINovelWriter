@@ -312,6 +312,48 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    fun run_styleProfileInjectedIntoChapterAuthorSystemPrompt() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突"
+                systemPrompt.contains("润色编辑") -> "第 2 章 《后续》\n润色正文"
+                systemPrompt.contains("章节作者") -> "第 2 章 《后续》\n续写正文内容"
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val styleProfile = "叙事视角：第一人称\n## 风格样本\n他望着窗外，沉默不语。"
+        val events = orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "导入书",
+                genre = "续写",
+                theme = "",
+                style = "",
+                totalChapters = 2,
+                mode = CreationMode.AUTO,
+                startChapterIndex = 2,
+                styleProfile = styleProfile,
+                plotSummary = "第 2 章 《后续》",
+                skipSetup = true,
+                existingWorldview = "## 人物设定\n主角：阿杰",
+                existingChapters = listOf(
+                    com.ainovel.app.domain.agent.PreviousChapter("第 1 章 开端", "旧正文")
+                )
+            ),
+            session = session
+        ).toList()
+
+        assertThat(events.any { it is PipelineEvent.ChapterGenerated }).isTrue()
+        // 画像与风格样本必须注入章节作者 systemPrompt，且润色也保留画像
+        assertThat(fake.recordedSystemPrompts.any { it.contains("续写模式") }).isTrue()
+        assertThat(fake.recordedSystemPrompts.any { it.contains("他望着窗外，沉默不语。") }).isTrue()
+        assertThat(fake.recordedUserMessages.any { it.contains("手法模仿") }).isTrue()
+    }
+
+    @Test
     fun run_skipSetup_singleNewChapter_emitsCompleted() = runTest {
         val orchestrator = buildOrchestrator(emptyMap())
         val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)

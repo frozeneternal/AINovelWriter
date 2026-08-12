@@ -116,13 +116,30 @@ class NovelAnalyzer(
     }
 
     private fun splitPlotAndStyle(text: String): Pair<String, String> {
-        val plotIdx = text.indexOf("## 情节梗概")
-        val styleIdx = text.indexOf("## 手法画像")
-        if (plotIdx >= 0 && styleIdx > plotIdx) {
-            val plot = text.substring(plotIdx, styleIdx).trim()
-            val style = text.substring(styleIdx).trim()
-            return plot to style
+        val plot = sectionAfterHeading(text, "情节梗概", "手法画像")
+        val style = sectionAfterHeading(text, "手法画像", null)
+        return (plot ?: "").trim() to (style ?: "").trim()
+    }
+
+    /**
+     * 按 Markdown 标题定位章节内容：返回 [keyword] 所在标题行之后、
+     * 下一个 [nextKeyword] 标题行之前（nextKeyword 为 null 时到文本末尾）的内容。
+     * 标题行采用正则匹配，容忍标题变体（### 手法画像、【手法画像】等）。
+     */
+    private fun sectionAfterHeading(text: String, keyword: String, nextKeyword: String?): String? {
+        val lines = text.lineSequence().toList()
+        val startIdx = lines.indexOfFirst { line ->
+            line.trim().matches(Regex("""#{1,6}\s*[【\[]?.*$keyword.*"""))
         }
-        return text to ""
+        if (startIdx < 0) return null
+        val endIdx = if (nextKeyword == null) {
+            lines.size
+        } else {
+            val idx = lines.indexOfFirst { line ->
+                line.trim().matches(Regex("""#{1,6}\s*[【\[]?.*$nextKeyword.*"""))
+            }
+            if (idx > startIdx) idx else lines.size
+        }
+        return lines.subList(startIdx + 1, endIdx).joinToString("\n")
     }
 }

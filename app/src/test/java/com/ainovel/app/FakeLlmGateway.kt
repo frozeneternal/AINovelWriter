@@ -14,6 +14,7 @@ class FakeLlmGateway : LlmGateway {
     var contentPolicyFailForSystemPrompt: String? = null
     var contentPolicyFailRemaining: Int = 1
     val recordedUserMessages: MutableList<String> = mutableListOf()
+    val recordedSystemPrompts: MutableList<String> = mutableListOf()
 
     override suspend fun streamChat(
         systemPrompt: String,
@@ -21,6 +22,7 @@ class FakeLlmGateway : LlmGateway {
         temperature: Double,
         maxTokens: Int
     ): Flow<String> {
+        recordedSystemPrompts += systemPrompt
         recordedUserMessages += userMessage
         failForSystemPrompt?.let {
             if (systemPrompt.contains(it)) throw IllegalStateException("模拟失败")
@@ -46,6 +48,7 @@ class FakeLlmGateway : LlmGateway {
         temperature: Double,
         maxTokens: Int
     ): String {
+        recordedSystemPrompts += systemPrompt
         recordedUserMessages += userMessage
         failForSystemPrompt?.let {
             if (systemPrompt.contains(it)) throw IllegalStateException("模拟失败")

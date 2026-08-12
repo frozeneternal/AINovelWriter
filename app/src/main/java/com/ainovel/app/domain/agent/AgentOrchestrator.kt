@@ -216,13 +216,16 @@ class AgentOrchestrator(
             )
 
             val rawChapter = try {
+                val baseDefinition = PromptTemplates.agent("chapter-author")
                 val systemPrompt = buildString {
-                    append(PromptTemplates.agent("chapter-author").systemPrompt)
+                    append(baseDefinition.systemPrompt)
                     if (!request.styleProfile.isNullOrBlank()) {
                         append("\n\n【续写模式】")
-                        append("\n这是续写已有小说的场景。你必须严格模仿原作者的写作手法画像，")
+                        append("\n这是续写已有小说的场景。你必须严格模仿原作者的写作手法画像与风格样本，")
                         append("保持叙事视角、句式节奏、描写密度、对话风格、悬念手法与全书一致。")
                         append("开篇与上一章结尾自然衔接，不得突兀改变风格。")
+                        append("\n【原作写作手法画像】\n")
+                        append(request.styleProfile)
                     }
                 }
                 withContentComplianceRetry(
@@ -234,8 +237,12 @@ class AgentOrchestrator(
                     llm.streamChat(
                         systemPrompt = sys,
                         userMessage = user,
-                        temperature = PromptTemplates.agent("chapter-author").temperature,
-                        maxTokens = PromptTemplates.agent("chapter-author").maxTokens
+                        temperature = if (request.styleProfile.isNullOrBlank()) {
+                            baseDefinition.temperature
+                        } else {
+                            0.6
+                        },
+                        maxTokens = baseDefinition.maxTokens
                     ).collect { chunk ->
                         sb.append(chunk)
                         session.update { it.copy(streamingText = sb.toString()) }

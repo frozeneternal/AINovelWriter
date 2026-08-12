@@ -140,4 +140,82 @@ class NovelAnalyzerTest {
         assertThat(ctx.toUserPrompt()).contains("第一人称")
         assertThat(ctx.toUserPrompt()).contains("情节梗概")
     }
+
+    @Test
+    fun analyze_styleProfileIncludesStyleSamples_persistsFullProfile() = runTest {
+        val persistence = FakePersistence()
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("提取人物信息") -> "## 人物设定\n### 阿杰\n- 身份：主角"
+                systemPrompt.contains("提取世界观设定") -> "## 地理设定\n大陆"
+                systemPrompt.contains("情节梗概") || systemPrompt.contains("写作技法") ->
+                    "## 情节梗概\n全书主线：少年成长\n\n## 手法画像\n- 叙事视角：第三人称限知\n- 句式节奏：长短句交错\n\n## 风格样本\n（原文1）\n（原文2）"
+                else -> ""
+            }
+        }
+        val analyzer = NovelAnalyzer(fake, persistence)
+        val session = AnalysisSession(1)
+        val events = analyzer.analyze(
+            com.ainovel.app.domain.analysis.AnalysisRequest(1, "第一章 开端\n正文"),
+            session
+        ).toList()
+
+        assertThat(events.any { it is AnalysisEvent.Completed }).isTrue()
+        assertThat(persistence.plot).contains("少年成长")
+        assertThat(persistence.style).contains("第三人称限知")
+        assertThat(persistence.style).contains("风格样本")
+        assertThat(persistence.style).contains("原文2")
+    }
+
+    @Test
+    fun splitPlotAndStyle_handlesHeadingVariantsAndReversedOrder() = runTest {
+        val persistence = FakePersistence()
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("提取人物信息") -> "## 人物设定\n### 阿杰"
+                systemPrompt.contains("提取世界观设定") -> "## 地理设定\n大陆"
+                systemPrompt.contains("情节梗概") || systemPrompt.contains("写作技法") ->
+                    "## 手法画像\n- 叙事视角：第一人称\n\n## 情节梗概\n全书主线：少年成长"
+                else -> ""
+            }
+        }
+        val analyzer = NovelAnalyzer(fake, persistence)
+        val session = AnalysisSession(1)
+        val events = analyzer.analyze(
+            com.ainovel.app.domain.analysis.AnalysisRequest(1, "第一章 开端\n正文"),
+            session
+        ).toList()
+
+        assertThat(events.any { it is AnalysisEvent.Completed }).isTrue()
+        // 手法画像在前、情节梗概在后时，两部分都要正确提取
+        assertThat(persistence.plot).contains("少年成长")
+        assertThat(persistence.style).contains("第一人称")
+    }
+
+    @Test
+    fun splitPlotAndStyle_headingWithExtraText_stillParses() = runTest {
+        val persistence = FakePersistence()
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("提取人物信息") -> "## 人物设定\n### 阿杰"
+                systemPrompt.contains("提取世界观设定") -> "## 地理设定\n大陆"
+                systemPrompt.contains("情节梗概") || systemPrompt.contains("写作技法") ->
+                    "### 情节梗概：\n全书主线：少年成长\n\n### 手法画像：\n- 叙事视角：第三人称"
+                else -> ""
+            }
+        }
+        val analyzer = NovelAnalyzer(fake, persistence)
+        val session = AnalysisSession(1)
+        val events = analyzer.analyze(
+            com.ainovel.app.domain.analysis.AnalysisRequest(1, "第一章 开端\n正文"),
+            session
+        ).toList()
+
+        assertThat(events.any { it is AnalysisEvent.Completed }).isTrue()
+        assertThat(persistence.plot).contains("少年成长")
+        assertThat(persistence.style).contains("第三人称")
+    }
 }

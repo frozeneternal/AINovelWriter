@@ -318,7 +318,7 @@ class NovelCreationUseCase @Inject constructor(
         val startIndex = storedChapters.size + 1
 
         val styleProfile = worldview?.styleProfile?.takeIf { it.isNotBlank() }
-            ?: "叙事视角：第三人称限知视角；句式节奏：长短句交错，段落短促；描写密度：动作与对话为主，心理描写节制；对话风格：口语化、辨识度高；悬念手法：章末留钩子。"
+            ?: "未提供预生成的手法画像。请仔细研读【前文】章节，自行归纳原作者的叙事视角、句式节奏、描写密度、对话风格与用词习惯，并严格模仿其文风续写，禁止改用通用小说腔调。"
         val plotSummary = worldview?.plotSummary?.takeIf { it.isNotBlank() } ?: ""
         val worldviewText = buildString {
             if (!worldview?.characters.isNullOrBlank()) append("## 人物设定\n${worldview?.characters}\n\n")
