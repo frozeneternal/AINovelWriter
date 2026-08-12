@@ -37,8 +37,14 @@ class NovelCreationUseCase @Inject constructor(
     private val activeJobs = mutableMapOf<Long, Job>()
     private val eventFlows = mutableMapOf<Long, MutableSharedFlow<PipelineEvent>>()
     private val runningStates = mutableMapOf<Long, MutableStateFlow<Boolean>>()
+    private val continuationFlags = mutableMapOf<Long, Boolean>()
 
     fun getSession(novelId: Long): CreationSession? = sessions[novelId]
+
+    /**
+     * 该书当前是否处于"续写"模式（区别于全新创作）。
+     */
+    fun isContinuationMode(novelId: Long): Boolean = continuationFlags[novelId] == true
 
     /**
      * 订阅某本书创作管线的实时事件。退出创作页后仍可重新订阅（后台管线持续运行）。
@@ -62,9 +68,9 @@ class NovelCreationUseCase @Inject constructor(
 
     /**
      * 在应用级后台作用域启动创作管线，不随任何 UI 生命周期取消。
-     * 若该书已在创作中则忽略，返回 false。
+     * 若该书已在创作中，或全部章节已写完，则忽略并返回 false（避免重复创作）。
      */
-    fun startPipelineInBackground(
+    suspend fun startPipelineInBackground(
         novelId: Long,
         title: String,
         genre: String,
@@ -74,6 +80,11 @@ class NovelCreationUseCase @Inject constructor(
         startChapterIndex: Int = 1
     ): Boolean {
         if (isRunning(novelId)) return false
+        val novel = novelRepository.getNovel(novelId)
+        if (novel != null && novel.totalChapters > 0 && novel.currentChapterIndex >= novel.totalChapters) {
+            return false
+        }
+        continuationFlags[novelId] = false
         val job = scope.launch {
             runPipeline(
                 novelId = novelId,
@@ -100,6 +111,7 @@ class NovelCreationUseCase @Inject constructor(
         totalNewChapters: Int
     ): Boolean {
         if (isRunning(novelId)) return false
+        continuationFlags[novelId] = true
         val job = scope.launch {
             runContinuation(
                 novelId = novelId,

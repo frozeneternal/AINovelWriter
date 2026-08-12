@@ -45,12 +45,21 @@ class CreationRunViewModel @Inject constructor(
             creationUseCase.events(id).collect { handleEvent(it) }
         }
 
+        // 后台管线已在运行：只恢复订阅，不重复启动
+        if (creationUseCase.isRunning(id)) return
+
         viewModelScope.launch {
-            if (isContinuation) {
+            // 以 useCase 记录的续写标志为准（从详情页"后台创作中"卡片进入时不丢失续写语义）
+            val effectiveContinuation = isContinuation || creationUseCase.isContinuationMode(id)
+            if (effectiveContinuation) {
                 creationUseCase.startContinuationInBackground(id, 5)
             } else {
                 val novel = novelRepository.getNovel(id) ?: return@launch
                 val existingChapters = novelRepository.countChapters(id)
+                // 全部章节已写完则不重复创作，仅展示已完成状态
+                if (novel.totalChapters > 0 && existingChapters >= novel.totalChapters) {
+                    return@launch
+                }
                 val startIndex = (existingChapters + 1).coerceAtMost(novel.totalChapters)
                 creationUseCase.startPipelineInBackground(
                     novelId = id,

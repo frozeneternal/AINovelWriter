@@ -293,4 +293,65 @@ class NovelCreationUseCaseTest {
         assertThat(useCase.isRunning(novelId)).isFalse()
         assertThat(useCase.observeRunning(novelId).value).isFalse()
     }
+
+    @Test
+    fun startPipelineInBackground_completedNovel_doesNotRestart() = runBlocking {
+        // 书已写完（10/10）且状态 COMPLETED，再次进入创作不应重新启动管线
+        val novelId = seedImportedNovel(10)
+        val fake = FakeLlmGateway()
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        val started = useCase.startPipelineInBackground(
+            novelId = novelId,
+            title = "导入书",
+            genre = "导入",
+            theme = "梗概",
+            style = "爽文风",
+            totalChapters = 10,
+            startChapterIndex = 11
+        )
+        assertThat(started).isFalse()
+        assertThat(useCase.isRunning(novelId)).isFalse()
+        assertThat(dao.getChapters(novelId)).hasSize(10)
+    }
+
+    @Test
+    fun continuationMode_flagTrackedPerNovel() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        // 未启动时标志应为 false
+        assertThat(useCase.isContinuationMode(novelId)).isFalse()
+
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 1)).isTrue()
+        assertThat(useCase.isContinuationMode(novelId)).isTrue()
+
+        kotlinx.coroutines.withTimeout(15000) {
+            while (useCase.isRunning(novelId)) {
+                delay(100)
+            }
+        }
+
+        // 完成后标志保留，供再次进入时修正续写语义
+        assertThat(useCase.isContinuationMode(novelId)).isTrue()
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
+    }
 }
