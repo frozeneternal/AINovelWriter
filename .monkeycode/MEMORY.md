@@ -127,3 +127,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - 修复模式：continuity-editor prompt 改为"仅发现问题时才输出【修正后章节】正文，无问题只输出【一致性报告】- 无设定冲突"；parseContinuityOutput 在无修正章节时回退原章节正文（fallback），绝不能把报告文本当作正文返回（旧代码 `return issues to output.trim()` 会把报告当章节，是新 prompt 生效后的隐患）
   - 润色编辑是质量保证的最后一道，不要跳过或降级；若后续还想提速，考虑上下文裁剪（recentChaptersInContext 全文注入）而非削弱润色
   - 上下文裁剪落地：ContextManager 默认 recentChaptersInContext 从 5 降到 3，每章只保留最近 3 章全文（连贯性核心），更早章节经 SummaryCompressor 压缩为摘要注入，显著减小输入 token 规模、加快每次 LLM 生成的首 token
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while fixing "续写不像以原作者手法续写" (continuation style drift)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - "续写不像原作者手法"的四层根因与修复：① NovelAnalyzer.splitPlotAndStyle 旧实现用 `indexOf("## 情节梗概")`/`indexOf("## 手法画像")` 精确匹配且强制梗概在前，LLM 标题文字/顺序稍有偏差就整个返回 `text to ""`，styleProfile 变空、续写回退到写死的通用文风（任何小说都套同一套"第三人称限知/长短句交错"）。改按行正则匹配标题（容忍 ### 手法画像、【手法画像】等变体）并顺序无关地分节，style 提取失败只丢画像不丢梗概 ② plot-style-analyzer prompt 增加【风格样本】部分，要求摘录 2-3 段 60-150 字原句（一段对话、一段描写、一段叙事/心理）作为续写句式范本——模型凭抽象画像（"长短句交错"）模仿远不如直接给原句 ③ 章节作者 systemPrompt 只空喊"严格模仿"不注入画像内容，实际画像埋在 userMessage 末尾被前文淹没；现在把 request.styleProfile 完整拼进 systemPrompt【原作写作手法画像】段，并把续写温度从 0.9 降到 0.6（模仿文风需要低温度） ④ runContinuation 的 styleProfile fallback 从写死通用文风改为引导模型"研读【前文】自行归纳原作者风格"，避免没有画像时套通用腔调
+  - ContextManager.toUserPrompt 的【续写要求】段措辞要明确"逐条对照画像与样本模仿、禁止通用小说腔调"，并把画像标题写成"【原作写作手法画像与风格样本】"让模型识别可模仿的句式样本
+  - 测试提示：FakeLlmGateway 增加 recordedSystemPrompts 记录 systemPrompt（此前只记录 userMessage），才能断言画像注入到章节作者 systemPrompt；新增测试验证 splitPlotAndStyle 对标题变体/顺序颠倒/带风格样本三种形态都能正确提取
