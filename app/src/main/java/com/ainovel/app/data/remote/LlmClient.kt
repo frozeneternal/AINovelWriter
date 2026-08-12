@@ -270,7 +270,7 @@ class LlmClient(
                 } else {
                     cont.resume(result)
                 }
-            } catch (e: IOException) {
+            } catch (e: Throwable) {
                 if (cont.isCancelled) {
                     cont.resumeWithException(CancellationException())
                 } else {

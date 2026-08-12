@@ -610,6 +610,102 @@ class NovelCreationUseCaseTest {
     }
 
     @Test
+    fun startContinuationInBackground_zeroChapters_returnsFalse() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(FakeLlmGateway(), ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 0)).isFalse()
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = -1)).isFalse()
+        assertThat(useCase.isRunning(novelId)).isFalse()
+        // 未被错误启动，章节与 totalChapters 均保持不变
+        assertThat(dao.getNovel(novelId)!!.totalChapters).isEqualTo(3)
+        assertThat(dao.getChapters(novelId)).hasSize(3)
+    }
+
+    @Test
+    fun startPipelineInBackground_zeroTotalChapters_returnsFalse() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(FakeLlmGateway(), ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        val started = useCase.startPipelineInBackground(
+            novelId = novelId,
+            title = "导入书",
+            genre = "导入",
+            theme = "梗概",
+            style = "爽文风",
+            totalChapters = 0,
+            startChapterIndex = 4
+        )
+        assertThat(started).isFalse()
+        assertThat(useCase.isRunning(novelId)).isFalse()
+        assertThat(dao.getChapters(novelId)).hasSize(3)
+    }
+
+    @Test
+    fun runContinuation_zeroChapters_throws() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(FakeLlmGateway(), ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        val exception = runCatching {
+            useCase.runContinuation(
+                novelId = novelId,
+                totalNewChapters = 0,
+                mode = CreationMode.AUTO
+            ).toList()
+        }.exceptionOrNull()
+        assertThat(exception).isInstanceOf(IllegalArgumentException::class.java)
+        // totalChapters 不应被缩水
+        assertThat(dao.getNovel(novelId)!!.totalChapters).isEqualTo(3)
+    }
+
+    @Test
+    fun startContinuationInBackground_chapterWordCount_passedThrough() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        assertThat(useCase.startContinuationInBackground(
+            novelId = novelId,
+            totalNewChapters = 1,
+            chapterWordCount = 2000
+        )).isTrue()
+
+        kotlinx.coroutines.withTimeout(15000) {
+            while (useCase.isRunning(novelId)) delay(100)
+        }
+
+        val chapterPrompt = fake.recordedSystemPrompts.first { it.contains("才华横溢的小说章节作者") }
+        assertThat(chapterPrompt).contains("【本章字数要求】")
+        assertThat(chapterPrompt).contains("2000 字")
+        assertThat(chapterPrompt).contains("【续写推进要求】")
+    }
+
+    @Test
     fun resumeBeforePipelineReachesPausePointStillCompletes() = runBlocking {
         val novelId = seedImportedNovel(3)
         val fake = FakeLlmGateway()

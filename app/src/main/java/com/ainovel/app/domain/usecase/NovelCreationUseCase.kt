@@ -96,6 +96,7 @@ class NovelCreationUseCase @Inject constructor(
         continuationDirection: String = "",
         chapterWordCount: Int = 0
     ): Boolean {
+        if (totalChapters <= 0) return false
         if (isRunning(novelId)) return false
         val novel = novelRepository.getNovel(novelId)
         if (novel != null && novel.totalChapters > 0 && novel.currentChapterIndex >= novel.totalChapters) {
@@ -133,6 +134,7 @@ class NovelCreationUseCase @Inject constructor(
         continuationDirection: String = "",
         chapterWordCount: Int = 0
     ): Boolean {
+        if (totalNewChapters <= 0) return false
         if (isRunning(novelId)) return false
         continuationFlags[novelId] = true
         val job = scope.launch {
@@ -323,6 +325,7 @@ class NovelCreationUseCase @Inject constructor(
         continuationDirection: String = "",
         chapterWordCount: Int = 0
     ): Flow<PipelineEvent> {
+        require(totalNewChapters > 0) { "续写章节数必须大于 0" }
         val novel = novelRepository.getNovel(novelId) ?: error("书籍不存在")
         val worldview = novelRepository.getWorldview(novelId)
         val storedChapters = novelRepository.getChapters(novelId)
