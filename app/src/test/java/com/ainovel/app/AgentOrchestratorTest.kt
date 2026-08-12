@@ -570,4 +570,108 @@ class AgentOrchestratorTest {
         assertThat(events.any { it is PipelineEvent.Completed }).isTrue()
         assertThat(session.state.value.phase).isEqualTo(PipelinePhase.COMPLETED)
     }
+
+    @Test
+    fun run_chapterWordCountSpecified_injectsWordCountIntoChapterSystemPrompt() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO,
+                chapterWordCount = 2000
+            ),
+            session = session
+        ).toList()
+
+        val chapterPrompt = fake.recordedSystemPrompts.first { it.contains("才华横溢的小说章节作者") }
+        assertThat(chapterPrompt).contains("【本章字数要求】")
+        assertThat(chapterPrompt).contains("2000 字")
+        assertThat(chapterPrompt).contains("不得少于 1000 字")
+    }
+
+    @Test
+    fun run_withoutChapterWordCount_usesMinimumWordCountHint() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO
+            ),
+            session = session
+        ).toList()
+
+        val chapterPrompt = fake.recordedSystemPrompts.first { it.contains("才华横溢的小说章节作者") }
+        assertThat(chapterPrompt).contains("【本章字数要求】")
+        assertThat(chapterPrompt).contains("不得少于 1000 字")
+        assertThat(chapterPrompt).doesNotContain("2000 字")
+        assertThat(chapterPrompt).doesNotContain("目标字数：2000")
+    }
+
+    @Test
+    fun run_polishEditor_streamsTokens() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色后的正文"
+                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val events = orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO
+            ),
+            session = session
+        ).toList()
+
+        val tokens = events.filterIsInstance<PipelineEvent.Token>()
+        assertThat(tokens).isNotEmpty()
+        val chapter = events.filterIsInstance<PipelineEvent.ChapterGenerated>().single()
+        assertThat(chapter.content).contains("润色后的正文")
+    }
 }

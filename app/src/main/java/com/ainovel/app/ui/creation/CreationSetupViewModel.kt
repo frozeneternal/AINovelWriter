@@ -17,6 +17,7 @@ data class CreationSetupState(
     val theme: String = "",
     val style: String = "爽文风",
     val chapterCount: Int = 10,
+    val chapterWordCount: Int = 0,
     val mode: Boolean = false,
     val isConfigValid: Boolean = false,
     val error: String? = null,
@@ -56,6 +57,10 @@ class CreationSetupViewModel @Inject constructor(
 
     fun updateChapterCount(value: Int) {
         _state.value = _state.value.copy(chapterCount = value.coerceIn(1, 100))
+    }
+
+    fun updateChapterWordCount(value: Int) {
+        _state.value = _state.value.copy(chapterWordCount = value)
     }
 
     fun updateMode(auto: Boolean) {

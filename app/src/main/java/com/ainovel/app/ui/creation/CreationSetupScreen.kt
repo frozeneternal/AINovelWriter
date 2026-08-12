@@ -55,7 +55,7 @@ import androidx.compose.material3.MaterialTheme as M3
 @Composable
 fun CreationSetupScreen(
     onBack: () -> Unit,
-    onStart: (Long) -> Unit,
+    onStart: (Long, Int) -> Unit,
     viewModel: CreationSetupViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -135,6 +135,13 @@ fun CreationSetupScreen(
 
             Spacer(Modifier.height(16.dp))
 
+            WordCountDropdown(
+                wordCount = state.chapterWordCount,
+                onSelect = viewModel::updateChapterWordCount
+            )
+
+            Spacer(Modifier.height(16.dp))
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -172,7 +179,7 @@ fun CreationSetupScreen(
             }
 
             Button(
-                onClick = { viewModel.start(onStart) },
+                onClick = { viewModel.start { novelId -> onStart(novelId, state.chapterWordCount) } },
                 enabled = !state.submitting,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -229,6 +236,59 @@ private fun GenreDropdown(
                     text = { Text(g) },
                     onClick = {
                         onSelect(g)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 每章字数选项。value 为 0 表示不指定（自由发挥，但模型侧强制不少于 1000 字），
+ * 其余为正数的目标字数，供 PipelineRequest 与 prompt 注入。
+ */
+data class WordCountOption(val value: Int, val label: String)
+
+val WordCountOptions: List<WordCountOption> = listOf(
+    WordCountOption(0, "自由发挥（不少于 1000 字）"),
+    WordCountOption(1200, "约 1200 字 / 章"),
+    WordCountOption(2000, "约 2000 字 / 章"),
+    WordCountOption(3000, "约 3000 字 / 章")
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WordCountDropdown(
+    wordCount: Int,
+    onSelect: (Int) -> Unit
+) {
+    val selected = WordCountOptions.firstOrNull { it.value == wordCount } ?: WordCountOptions.first()
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selected.label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("每章字数") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            WordCountOptions.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        onSelect(option.value)
                         expanded = false
                     }
                 )

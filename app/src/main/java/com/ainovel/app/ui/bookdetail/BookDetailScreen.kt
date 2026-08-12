@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,6 +64,7 @@ import com.ainovel.app.data.local.entity.ChapterEntity
 import com.ainovel.app.domain.model.NovelSource
 import com.ainovel.app.domain.model.NovelStatus
 import com.ainovel.app.ui.settings.ModelSwitcher
+import com.ainovel.app.ui.creation.WordCountDropdown
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,8 +74,8 @@ fun BookDetailScreen(
     onBack: () -> Unit,
     onOpenReader: (Int) -> Unit,
     onOpenWorldview: () -> Unit,
-    onStartCreation: (String) -> Unit,
-    onStartContinuation: (String) -> Unit,
+    onStartCreation: (String, Int) -> Unit,
+    onStartContinuation: (String, Int, Int) -> Unit,
     onResumeCreation: () -> Unit,
     viewModel: BookDetailViewModel = hiltViewModel()
 ) {
@@ -81,7 +84,9 @@ fun BookDetailScreen(
     val novel = uiState.novel
     var showDirectionDialog by remember { mutableStateOf(false) }
     var directionInput by remember { mutableStateOf("") }
-    var pendingAction by remember { mutableStateOf<((String) -> Unit)?>(null) }
+    var pendingIsContinuation by remember { mutableStateOf(false) }
+    var continuationChapters by remember { mutableStateOf(5) }
+    var wordCountInput by remember { mutableStateOf(0) }
 
     LaunchedEffect(novelId) {
         viewModel.init(novelId)
@@ -222,7 +227,9 @@ fun BookDetailScreen(
                     if (n.source == NovelSource.IMPORTED) {
                         Button(
                             onClick = {
-                                pendingAction = onStartContinuation
+                                pendingIsContinuation = true
+                                continuationChapters = 5
+                                wordCountInput = 0
                                 directionInput = ""
                                 showDirectionDialog = true
                             },
@@ -243,7 +250,8 @@ fun BookDetailScreen(
                     } else {
                         Button(
                             onClick = {
-                                pendingAction = onStartCreation
+                                pendingIsContinuation = false
+                                wordCountInput = 0
                                 directionInput = ""
                                 showDirectionDialog = true
                             },
@@ -333,11 +341,15 @@ fun BookDetailScreen(
     if (showDirectionDialog) {
         AlertDialog(
             onDismissRequest = { showDirectionDialog = false },
-            title = { Text("续写方向（选填）") },
+            title = { Text(if (pendingIsContinuation) "续写设置" else "创作设置") },
             text = {
                 Column {
                     Text(
-                        "你希望接下来的剧情往什么方向发展？留空则按原作者风格与情节走向续写。",
+                        if (pendingIsContinuation) {
+                            "你希望接下来的剧情往什么方向发展？留空则按原作者风格与情节走向续写。"
+                        } else {
+                            "你希望后续剧情往什么方向发展？留空则按当前大纲继续创作。"
+                        },
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(12.dp))
@@ -346,8 +358,26 @@ fun BookDetailScreen(
                         onValueChange = { directionInput = it },
                         placeholder = { Text("例如：主角解开身世之谜后向帝都进发，遇见新对手…") },
                         modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        maxLines = 6
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                    if (pendingIsContinuation) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = continuationChapters.toString(),
+                            onValueChange = {
+                                it.toIntOrNull()?.let { v -> continuationChapters = v.coerceIn(1, 100) }
+                            },
+                            label = { Text("续写章节数") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    WordCountDropdown(
+                        wordCount = wordCountInput,
+                        onSelect = { wordCountInput = it }
                     )
                 }
             },
@@ -355,10 +385,15 @@ fun BookDetailScreen(
                 TextButton(
                     onClick = {
                         showDirectionDialog = false
-                        pendingAction?.invoke(directionInput.trim())
+                        val direction = directionInput.trim()
+                        if (pendingIsContinuation) {
+                            onStartContinuation(direction, continuationChapters, wordCountInput)
+                        } else {
+                            onStartCreation(direction, wordCountInput)
+                        }
                     }
                 ) {
-                    Text("开始续写")
+                    Text(if (pendingIsContinuation) "开始续写" else "开始创作")
                 }
             },
             dismissButton = {

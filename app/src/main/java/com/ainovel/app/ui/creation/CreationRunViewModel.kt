@@ -32,7 +32,14 @@ class CreationRunViewModel @Inject constructor(
     private var started = false
     private var eventsJob: Job? = null
 
-    fun startIfNeeded(id: Long, isContinuation: Boolean = false, resume: Boolean = false, direction: String = "") {
+    fun startIfNeeded(
+        id: Long,
+        isContinuation: Boolean = false,
+        resume: Boolean = false,
+        direction: String = "",
+        chapters: Int = 0,
+        wordCount: Int = 0
+    ) {
         if (started) return
         novelId = id
         started = true
@@ -52,7 +59,8 @@ class CreationRunViewModel @Inject constructor(
             val effectiveContinuation =
                 if (resume) creationUseCase.isContinuationMode(id) else isContinuation
             if (effectiveContinuation) {
-                creationUseCase.startContinuationInBackground(id, 5, direction)
+                val newChapters = if (chapters > 0) chapters else 5
+                creationUseCase.startContinuationInBackground(id, newChapters, direction, wordCount)
             } else {
                 val novel = novelRepository.getNovel(id) ?: return@launch
                 val existingChapters = novelRepository.countChapters(id)
@@ -69,7 +77,8 @@ class CreationRunViewModel @Inject constructor(
                     style = "爽文风",
                     totalChapters = novel.totalChapters,
                     startChapterIndex = startIndex,
-                    continuationDirection = direction
+                    continuationDirection = direction,
+                    chapterWordCount = wordCount
                 )
             }
         }

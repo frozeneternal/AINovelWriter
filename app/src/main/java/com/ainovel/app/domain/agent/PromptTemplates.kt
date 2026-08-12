@@ -57,7 +57,7 @@ object PromptTemplates {
 3. 开篇 1-2 句话快速抓住读者（场景切入或冲突切入）
 4. 对话要有辨识度，符合角色身份；动作描写具体；善用五感
 5. 章节末尾留下钩子或悬念
-6. 目标字数：每章 1200-2000 字
+6. 每章正文不少于 1000 字，目标字数与篇幅要求以任务指令中的【本章字数要求】为准
 7. 输出格式：先输出章节标题（第 N 章 《标题》），空一行，再输出正文
 8. 只输出章节正文本身，不要输出任何额外说明、评注或解释
             """.trimIndent()
@@ -191,6 +191,18 @@ object PromptTemplates {
 
     fun analysisAgent(id: String): AgentDefinition =
         analysisAgents.firstOrNull { it.id == id } ?: error("Unknown analysis agent: $id")
+
+    /**
+     * 根据"每章目标字数"计算章节作者/润色编辑的 maxTokens。
+     * 中文字符与 token 比例约为 1.5-2:1，按上限 2.2 倍预留生成空间。
+     * wordCount <= 0 表示不指定字数（自由发挥），使用默认 4000。
+     */
+    fun chapterMaxTokens(wordCount: Int): Int = when {
+        wordCount <= 0 -> 4000
+        wordCount <= 1500 -> 4000
+        wordCount <= 2500 -> 5500
+        else -> 8000
+    }
 
     fun buildNovelRequest(
         title: String,

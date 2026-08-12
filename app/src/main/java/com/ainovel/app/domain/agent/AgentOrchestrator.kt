@@ -26,7 +26,8 @@ data class PipelineRequest(
     val skipSetup: Boolean = false,
     val existingWorldview: String = "",
     val existingChapters: List<PreviousChapter> = emptyList(),
-    val continuationDirection: String = ""
+    val continuationDirection: String = "",
+    val chapterWordCount: Int = 0
 )
 
 data class PipelineResult(
@@ -231,6 +232,14 @@ class AgentOrchestrator(
                         append("\n【原作写作手法画像】\n")
                         append(request.styleProfile)
                     }
+                    if (request.chapterWordCount > 0) {
+                        append("\n\n【本章字数要求】")
+                        append("\n本章正文目标字数：${request.chapterWordCount} 字左右（可上下浮动 10%），")
+                        append("但不得少于 1000 字。篇幅要足以完整展开本章情节，避免内容单薄。")
+                    } else {
+                        append("\n\n【本章字数要求】")
+                        append("\n每章正文不得少于 1000 字，具体篇幅由剧情需要决定，但需保证情节完整饱满。")
+                    }
                 }
                 withContentComplianceRetry(
                     systemPrompt = systemPrompt,
@@ -246,7 +255,7 @@ class AgentOrchestrator(
                         } else {
                             0.6
                         },
-                        maxTokens = baseDefinition.maxTokens
+                        maxTokens = PromptTemplates.chapterMaxTokens(request.chapterWordCount)
                     ).collect { chunk ->
                         sb.append(chunk)
                         session.update { it.copy(streamingText = sb.toString()) }
@@ -327,12 +336,19 @@ class AgentOrchestrator(
                         append(corrected)
                     }
                 ) { sys, user ->
-                    llm.complete(
+                    val sb = StringBuilder()
+                    llm.streamChat(
                         systemPrompt = sys,
                         userMessage = user,
                         temperature = PromptTemplates.agent("polish-editor").temperature,
-                        maxTokens = PromptTemplates.agent("polish-editor").maxTokens
-                    )
+                        maxTokens = PromptTemplates.chapterMaxTokens(request.chapterWordCount)
+                    ).collect { chunk ->
+                        sb.append(chunk)
+                        session.update { it.copy(streamingText = sb.toString()) }
+                        emit(PipelineEvent.Token(chunk))
+                    }
+                    session.update { it.copy(streamingText = "") }
+                    sb.toString()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

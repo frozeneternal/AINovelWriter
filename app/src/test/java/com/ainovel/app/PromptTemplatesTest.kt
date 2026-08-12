@@ -53,4 +53,18 @@ class PromptTemplatesTest {
         assertThat(request.content).contains("【本回目标章节】")
         assertThat(request.content).contains("【前文摘要/上文】")
     }
+
+    @Test
+    fun chapterMaxTokens_scalesWithWordCount() {
+        assertThat(PromptTemplates.chapterMaxTokens(0)).isEqualTo(4000)
+        assertThat(PromptTemplates.chapterMaxTokens(1200)).isEqualTo(4000)
+        assertThat(PromptTemplates.chapterMaxTokens(2000)).isEqualTo(5500)
+        assertThat(PromptTemplates.chapterMaxTokens(3000)).isEqualTo(8000)
+    }
+
+    @Test
+    fun chapterAuthorPrompt_requiresMinWordCount() {
+        val author = PromptTemplates.agent("chapter-author")
+        assertThat(author.systemPrompt).contains("1000 字")
+    }
 }

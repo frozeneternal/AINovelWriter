@@ -93,7 +93,8 @@ class NovelCreationUseCase @Inject constructor(
         style: String,
         totalChapters: Int,
         startChapterIndex: Int = 1,
-        continuationDirection: String = ""
+        continuationDirection: String = "",
+        chapterWordCount: Int = 0
     ): Boolean {
         if (isRunning(novelId)) return false
         val novel = novelRepository.getNovel(novelId)
@@ -111,7 +112,8 @@ class NovelCreationUseCase @Inject constructor(
                 totalChapters = totalChapters,
                 mode = CreationMode.AUTO,
                 startChapterIndex = startChapterIndex,
-                continuationDirection = continuationDirection
+                continuationDirection = continuationDirection,
+                chapterWordCount = chapterWordCount
             ).collect { event ->
                 eventFlows[novelId]?.tryEmit(event)
             }
@@ -128,7 +130,8 @@ class NovelCreationUseCase @Inject constructor(
     fun startContinuationInBackground(
         novelId: Long,
         totalNewChapters: Int,
-        continuationDirection: String = ""
+        continuationDirection: String = "",
+        chapterWordCount: Int = 0
     ): Boolean {
         if (isRunning(novelId)) return false
         continuationFlags[novelId] = true
@@ -137,7 +140,8 @@ class NovelCreationUseCase @Inject constructor(
                 novelId = novelId,
                 totalNewChapters = totalNewChapters,
                 mode = CreationMode.AUTO,
-                continuationDirection = continuationDirection
+                continuationDirection = continuationDirection,
+                chapterWordCount = chapterWordCount
             ).collect { event ->
                 eventFlows[novelId]?.tryEmit(event)
             }
@@ -175,7 +179,8 @@ class NovelCreationUseCase @Inject constructor(
         totalChapters: Int,
         mode: CreationMode,
         startChapterIndex: Int = 1,
-        continuationDirection: String = ""
+        continuationDirection: String = "",
+        chapterWordCount: Int = 0
     ): Flow<PipelineEvent> {
         val session = CreationSession(novelId, mode)
         sessions[novelId] = session
@@ -190,7 +195,8 @@ class NovelCreationUseCase @Inject constructor(
                 totalChapters = totalChapters,
                 mode = mode,
                 startChapterIndex = startChapterIndex,
-                continuationDirection = continuationDirection
+                continuationDirection = continuationDirection,
+                chapterWordCount = chapterWordCount
             ),
             session = session
         ).onStart { markWriting(novelId) }.onEach { event ->
@@ -314,7 +320,8 @@ class NovelCreationUseCase @Inject constructor(
         novelId: Long,
         totalNewChapters: Int,
         mode: CreationMode,
-        continuationDirection: String = ""
+        continuationDirection: String = "",
+        chapterWordCount: Int = 0
     ): Flow<PipelineEvent> {
         val novel = novelRepository.getNovel(novelId) ?: error("书籍不存在")
         val worldview = novelRepository.getWorldview(novelId)
@@ -362,7 +369,8 @@ class NovelCreationUseCase @Inject constructor(
                 skipSetup = true,
                 existingWorldview = worldviewText,
                 existingChapters = previousChapters,
-                continuationDirection = continuationDirection
+                continuationDirection = continuationDirection,
+                chapterWordCount = chapterWordCount
             ),
             session = session
         ).onEach { event ->

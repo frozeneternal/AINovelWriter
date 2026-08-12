@@ -54,6 +54,8 @@ fun CreationRunScreen(
     isContinuation: Boolean = false,
     resume: Boolean = false,
     direction: String = "",
+    chapters: Int = 0,
+    wordCount: Int = 0,
     onBack: () -> Unit,
     onOpenNovel: (Long) -> Unit,
     viewModel: CreationRunViewModel = hiltViewModel()
@@ -62,7 +64,7 @@ fun CreationRunScreen(
     val phaseLabel by viewModel.phaseLabel.collectAsStateWithLifecycle()
 
     LaunchedEffect(novelId) {
-        viewModel.startIfNeeded(novelId, isContinuation, resume, direction)
+        viewModel.startIfNeeded(novelId, isContinuation, resume, direction, chapters, wordCount)
     }
 
     val isRunning = state.phase == PipelinePhase.WORLDVIEW ||
