@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -41,7 +43,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,14 +69,17 @@ fun BookDetailScreen(
     onBack: () -> Unit,
     onOpenReader: (Int) -> Unit,
     onOpenWorldview: () -> Unit,
-    onStartCreation: () -> Unit,
-    onStartContinuation: () -> Unit,
+    onStartCreation: (String) -> Unit,
+    onStartContinuation: (String) -> Unit,
     onResumeCreation: () -> Unit,
     viewModel: BookDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val novel = uiState.novel
+    var showDirectionDialog by remember { mutableStateOf(false) }
+    var directionInput by remember { mutableStateOf("") }
+    var pendingAction by remember { mutableStateOf<((String) -> Unit)?>(null) }
 
     LaunchedEffect(novelId) {
         viewModel.init(novelId)
@@ -193,7 +200,11 @@ fun BookDetailScreen(
                 ) {
                     if (n.source == NovelSource.IMPORTED) {
                         Button(
-                            onClick = onStartContinuation,
+                            onClick = {
+                                pendingAction = onStartContinuation
+                                directionInput = ""
+                                showDirectionDialog = true
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -210,7 +221,11 @@ fun BookDetailScreen(
                         }
                     } else {
                         Button(
-                            onClick = onStartCreation,
+                            onClick = {
+                                pendingAction = onStartCreation
+                                directionInput = ""
+                                showDirectionDialog = true
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -292,6 +307,45 @@ fun BookDetailScreen(
                 }
             }
         }
+    }
+
+    if (showDirectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showDirectionDialog = false },
+            title = { Text("续写方向（选填）") },
+            text = {
+                Column {
+                    Text(
+                        "你希望接下来的剧情往什么方向发展？留空则按原作者风格与情节走向续写。",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = directionInput,
+                        onValueChange = { directionInput = it },
+                        placeholder = { Text("例如：主角解开身世之谜后向帝都进发，遇见新对手…") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 6
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDirectionDialog = false
+                        pendingAction?.invoke(directionInput.trim())
+                    }
+                ) {
+                    Text("开始续写")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDirectionDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 

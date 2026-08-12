@@ -25,7 +25,8 @@ data class PipelineRequest(
     val plotSummary: String? = null,
     val skipSetup: Boolean = false,
     val existingWorldview: String = "",
-    val existingChapters: List<PreviousChapter> = emptyList()
+    val existingChapters: List<PreviousChapter> = emptyList(),
+    val continuationDirection: String = ""
 )
 
 data class PipelineResult(
@@ -144,7 +145,8 @@ class AgentOrchestrator(
                 previousChapters = previous,
                 chapterTitle = chapterTitle,
                 plotSummary = request.plotSummary.orEmpty(),
-                styleProfile = request.styleProfile.orEmpty()
+                styleProfile = request.styleProfile.orEmpty(),
+                continuationDirection = request.continuationDirection
             )
 
             val rawChapter = try {

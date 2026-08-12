@@ -54,4 +54,37 @@ class ContextManagerTest {
         val long = manager.estimateTokenCount("你好".repeat(100))
         assertThat(long).isGreaterThan(short)
     }
+
+    @Test
+    fun buildChapterContext_withDirection_injectsDirectionSection() = runTest {
+        val context = manager.buildChapterContext(
+            novelTitle = "测试",
+            worldview = "世界设定",
+            outline = "大纲",
+            previousChapters = listOf(PreviousChapter("第一章", "第一章正文")),
+            chapterTitle = "第二章",
+            styleProfile = "第一人称",
+            continuationDirection = "主角解开身世之谜后向帝都进发"
+        )
+        val prompt = context.toUserPrompt()
+        assertThat(prompt).contains("【剧情发展方向】")
+        assertThat(prompt).contains("主角解开身世之谜后向帝都进发")
+        // 续写要求仍然保留
+        assertThat(prompt).contains("续写要求")
+    }
+
+    @Test
+    fun buildChapterContext_withoutDirection_omitsDirectionSection() = runTest {
+        val context = manager.buildChapterContext(
+            novelTitle = "测试",
+            worldview = "世界设定",
+            outline = "大纲",
+            previousChapters = listOf(PreviousChapter("第一章", "第一章正文")),
+            chapterTitle = "第二章",
+            styleProfile = "第一人称"
+        )
+        val prompt = context.toUserPrompt()
+        assertThat(prompt).doesNotContain("【剧情发展方向】")
+        assertThat(prompt).contains("续写要求")
+    }
 }

@@ -184,6 +184,75 @@ class NovelCreationUseCaseTest {
     }
 
     @Test
+    fun runContinuation_injectsContinuationDirectionIntoChapterPrompt() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        val chapterPrompts = mutableListOf<String>()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("章节作者") -> {
+                    chapterPrompts += userMessage
+                    "第 4 章 续写\n正文".repeat(30)
+                }
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(20)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        useCase.runContinuation(
+            novelId = novelId,
+            totalNewChapters = 1,
+            mode = CreationMode.AUTO,
+            continuationDirection = "主角解开身世之谜后向帝都进发，遇见新对手"
+        ).toList()
+
+        assertThat(chapterPrompts).isNotEmpty()
+        assertThat(chapterPrompts.first()).contains("【剧情发展方向】")
+        assertThat(chapterPrompts.first()).contains("主角解开身世之谜后向帝都进发，遇见新对手")
+        assertThat(chapterPrompts.first()).contains("续写要求")
+    }
+
+    @Test
+    fun runContinuation_withoutDirection_omitsDirectionSection() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        val chapterPrompts = mutableListOf<String>()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("章节作者") -> {
+                    chapterPrompts += userMessage
+                    "第 4 章 续写\n正文".repeat(30)
+                }
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(20)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        useCase.runContinuation(
+            novelId = novelId,
+            totalNewChapters = 1,
+            mode = CreationMode.AUTO
+        ).toList()
+
+        assertThat(chapterPrompts).isNotEmpty()
+        assertThat(chapterPrompts.first()).doesNotContain("【剧情发展方向】")
+    }
+
+    @Test
     fun runContinuation_agentsInvoked_butSkipsWorldviewAndOutline() = runBlocking {
         val novelId = seedImportedNovel(2)
         val fake = FakeLlmGateway()

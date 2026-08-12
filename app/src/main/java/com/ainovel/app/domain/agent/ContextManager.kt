@@ -24,7 +24,8 @@ class ContextManager(
         previousChapters: List<PreviousChapter>,
         chapterTitle: String,
         plotSummary: String = "",
-        styleProfile: String = ""
+        styleProfile: String = "",
+        continuationDirection: String = ""
     ): ChapterContext {
         val recent = previousChapters.takeLast(recentChaptersInContext)
         val older = previousChapters.dropLast(recentChaptersInContext)
@@ -45,7 +46,8 @@ class ContextManager(
             recentChapters = recentText,
             chapterTitle = chapterTitle,
             plotSummary = plotSummary.take(maxContextTokens / 3),
-            styleProfile = styleProfile
+            styleProfile = styleProfile,
+            continuationDirection = continuationDirection
         )
     }
 
@@ -65,7 +67,8 @@ data class ChapterContext(
     val recentChapters: String,
     val chapterTitle: String,
     val plotSummary: String = "",
-    val styleProfile: String = ""
+    val styleProfile: String = "",
+    val continuationDirection: String = ""
 ) {
     fun toUserPrompt(): String = buildString {
         append("书名：《$novelTitle》")
@@ -75,6 +78,11 @@ data class ChapterContext(
         if (olderSummary.isNotBlank()) append("\n\n").append(olderSummary)
         if (recentChapters.isNotBlank()) append("\n\n【前文】\n").append(recentChapters)
         if (chapterTitle.isNotBlank()) append("\n\n【本回目标章节】\n").append(chapterTitle)
+        if (continuationDirection.isNotBlank()) {
+            append("\n\n【剧情发展方向】\n")
+            append("作者希望后续剧情朝以下方向发展，续写时须遵循并逐步推进（不得与此方向相悖，不得简单跳过）：\n")
+            append(continuationDirection)
+        }
         if (styleProfile.isNotBlank()) {
             append("\n\n【续写要求】\n")
             append("本回是续写已有小说的章节，必须同时满足：\n")

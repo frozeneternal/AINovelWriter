@@ -22,15 +22,16 @@ object Routes {
     const val HISTORY = "history"
     const val SETTINGS = "settings"
     const val CREATION_SETUP = "creation_setup"
-    const val CREATION_RUN = "creation_run/{novelId}?continuation={continuation}&resume={resume}"
+    const val CREATION_RUN = "creation_run/{novelId}?continuation={continuation}&resume={resume}&direction={direction}"
     const val BOOK_DETAIL = "book_detail/{novelId}"
     const val READER = "reader/{novelId}/{chapterIndex}"
     const val WORLDVIEW = "worldview/{novelId}"
     const val IMPORT = "import"
     const val ANALYSIS_RUN = "analysis_run/{novelId}"
 
-    fun creationRun(novelId: Long, continuation: Boolean = false, resume: Boolean = false) =
-        "creation_run/$novelId?continuation=$continuation&resume=$resume"
+    fun creationRun(novelId: Long, continuation: Boolean = false, resume: Boolean = false, direction: String = "") =
+        "creation_run/$novelId?continuation=$continuation&resume=$resume&direction=" +
+            java.net.URLEncoder.encode(direction, "UTF-8")
     fun bookDetail(novelId: Long) = "book_detail/$novelId"
     fun reader(novelId: Long, chapterIndex: Int) = "reader/$novelId/$chapterIndex"
     fun worldview(novelId: Long) = "worldview/$novelId"
@@ -109,16 +110,22 @@ fun AppNavHost() {
                 navArgument("resume") {
                     type = NavType.BoolType
                     defaultValue = false
+                },
+                navArgument("direction") {
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { entry ->
             val novelId = entry.arguments?.getLong("novelId") ?: 0L
             val isContinuation = entry.arguments?.getBoolean("continuation") ?: false
             val resume = entry.arguments?.getBoolean("resume") ?: false
+            val direction = entry.arguments?.getString("direction") ?: ""
             CreationRunScreen(
                 novelId = novelId,
                 isContinuation = isContinuation,
                 resume = resume,
+                direction = direction,
                 onBack = { navController.popBackStack() },
                 onOpenNovel = { id ->
                     navController.navigate(Routes.bookDetail(id)) {
@@ -139,11 +146,11 @@ fun AppNavHost() {
                     navController.navigate(Routes.reader(novelId, chapterIndex))
                 },
                 onOpenWorldview = { navController.navigate(Routes.worldview(novelId)) },
-                onStartCreation = {
-                    navController.navigate(Routes.creationRun(novelId))
+                onStartCreation = { direction ->
+                    navController.navigate(Routes.creationRun(novelId, direction = direction))
                 },
-                onStartContinuation = {
-                    navController.navigate(Routes.creationRun(novelId, continuation = true))
+                onStartContinuation = { direction ->
+                    navController.navigate(Routes.creationRun(novelId, continuation = true, direction = direction))
                 },
                 onResumeCreation = {
                     navController.navigate(Routes.creationRun(novelId, resume = true))
