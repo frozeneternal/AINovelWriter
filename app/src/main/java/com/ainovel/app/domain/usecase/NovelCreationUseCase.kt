@@ -296,7 +296,11 @@ class NovelCreationUseCase @Inject constructor(
     fun cancel(novelId: Long) {
         activeJobs.remove(novelId)?.cancel()
         sessions[novelId]?.update { it.copy(waitingConfirm = false) }
-        sessions[novelId]?.reset()
+        sessions[novelId]?.let { session ->
+            session.update { it.copy(phase = PipelinePhase.CANCELLED, message = "已停止生成") }
+            eventFlows[novelId]?.tryEmit(PipelineEvent.StateChanged(session.state.value))
+            session.reset()
+        }
         sessions.remove(novelId)
         setRunning(novelId, false)
         setPaused(novelId, false)

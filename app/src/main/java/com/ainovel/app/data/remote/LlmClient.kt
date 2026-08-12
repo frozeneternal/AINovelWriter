@@ -7,10 +7,13 @@ import com.ainovel.app.domain.model.ApiConfig
 import com.ainovel.app.domain.model.ConfigProvider
 import com.ainovel.app.domain.model.ModelConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -21,6 +24,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,6 +33,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.BufferedSource
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class LlmClient(
     private val client: OkHttpClient,
@@ -77,14 +84,38 @@ class LlmClient(
             throw IOException("未配置文本模型 API Key")
         }
         val request = buildChatRequest(config, systemPrompt, userMessage, stream = false)
-        client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw buildError(response.code, body)
+        val response = awaitResponse(client.newCall(request))
+        response.use {
+            val body = it.body?.string().orEmpty()
+            if (!it.isSuccessful) {
+                throw buildError(it.code, body)
             }
             parseCompletion(body)
         }
     }
+
+    /**
+     * 可取消的 OkHttp 异步请求：协程取消时同步 [Call.cancel]，中断阻塞网络调用，
+     * 使"停止生成/暂停"能立即生效而不是等网络超时。
+     */
+    private suspend fun awaitResponse(call: Call): Response =
+        suspendCancellableCoroutine { cont ->
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (cont.isCancelled) return
+                    cont.resumeWithException(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (cont.isCancelled) {
+                        response.close()
+                        return
+                    }
+                    cont.resume(response)
+                }
+            })
+            cont.invokeOnCancellation { call.cancel() }
+        }
 
     override suspend fun testConnection(): ConnectionResult = withContext(Dispatchers.IO) {
         try {
@@ -188,7 +219,7 @@ class LlmClient(
     }
 
     private suspend fun FlowCollector<String>.emitStream(request: okhttp3.Request, config: ModelConfig) {
-        val response = client.newCall(request).execute()
+        val response = awaitResponse(client.newCall(request))
         if (!response.isSuccessful) {
             val body = response.body?.string().orEmpty()
             response.close()
@@ -202,6 +233,7 @@ class LlmClient(
 
         try {
             while (!source.exhausted()) {
+                currentCoroutineContext().ensureActive()
                 val line = source.readUtf8Line() ?: break
                 if (!line.startsWith("data:")) continue
                 val data = line.removePrefix("data:").trim()

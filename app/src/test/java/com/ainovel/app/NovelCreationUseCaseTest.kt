@@ -364,6 +364,47 @@ class NovelCreationUseCaseTest {
     }
 
     @Test
+    fun cancelBackground_emitsCancelledState_andStopsChapters() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        val started = java.util.concurrent.CountDownLatch(1)
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("章节作者") -> {
+                    started.countDown()
+                    Thread.sleep(5000)
+                    "第 4 章 续写\n正文".repeat(30)
+                }
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        val events = mutableListOf<PipelineEvent>()
+        val eventsJob = launch {
+            useCase.events(novelId).collect { event -> events += event }
+        }
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 1)).isTrue()
+        // 等章节作者开始生成后再取消，模拟"生成中停止"
+        assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+        delay(100)
+        useCase.cancel(novelId)
+        delay(200)
+
+        // 取消后应发出 CANCELLED 状态，且不再产出章节
+        assertThat(useCase.isRunning(novelId)).isFalse()
+        assertThat(events.filterIsInstance<PipelineEvent.StateChanged>()
+            .any { it.state.phase == PipelinePhase.CANCELLED }).isTrue()
+        assertThat(events.filterIsInstance<PipelineEvent.ChapterGenerated>()).isEmpty()
+
+        eventsJob.cancel()
+    }
+
+    @Test
     fun startPipelineInBackground_completedNovel_doesNotRestart() = runBlocking {
         // 书已写完（10/10）且状态 COMPLETED，再次进入创作不应重新启动管线
         val novelId = seedImportedNovel(10)

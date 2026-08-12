@@ -11,6 +11,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -265,6 +266,52 @@ class AgentOrchestratorTest {
         }
         job.cancel()
         assertThat(confirmed).isTrue()
+    }
+
+    @Test
+    fun run_cancellationDuringChapterGeneration_stopsPipeline() = runBlocking {
+        val fake = FakeLlmGateway()
+        val started = java.util.concurrent.atomic.AtomicBoolean(false)
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("章节作者") -> {
+                    started.set(true)
+                    Thread.sleep(3000)
+                    "第 1 章 《开端》\n章节正文"
+                }
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val events = mutableListOf<PipelineEvent>()
+        // 管线跑在真实线程（Fake 用 Thread.sleep 阻塞），测试体轮询 flag 后取消
+        val job = launch(kotlinx.coroutines.Dispatchers.Default) {
+            orchestrator.run(
+                request = com.ainovel.app.domain.agent.PipelineRequest(
+                    novelId = 1,
+                    novelTitle = "测试",
+                    genre = "玄幻",
+                    theme = "",
+                    style = "",
+                    totalChapters = 2,
+                    mode = CreationMode.AUTO
+                ),
+                session = session
+            ).collect { events += it }
+        }
+
+        kotlinx.coroutines.withTimeout(5000) {
+            while (!started.get()) delay(50)
+        }
+        job.cancel()
+        kotlinx.coroutines.withTimeout(5000) { job.join() }
+
+        // 取消后不应产出任何章节，phase 不应进入 COMPLETED
+        assertThat(events.filterIsInstance<PipelineEvent.ChapterGenerated>()).isEmpty()
+        assertThat(events.filterIsInstance<PipelineEvent.Completed>()).isEmpty()
     }
 
     @Test

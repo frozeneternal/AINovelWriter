@@ -139,6 +139,8 @@ class AgentOrchestrator(
                         maxTokens = PromptTemplates.agent("worldview-architect").maxTokens
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 update(session) { it.copy(phase = PipelinePhase.FAILED, error = e.message) }
                 emit(PipelineEvent.Error(e.message ?: "世界观生成失败"))
@@ -170,6 +172,8 @@ class AgentOrchestrator(
                         maxTokens = PromptTemplates.agent("outline-planner").maxTokens
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 update(session) { it.copy(phase = PipelinePhase.FAILED, error = e.message) }
                 emit(PipelineEvent.Error(e.message ?: "大纲生成失败"))
@@ -250,6 +254,8 @@ class AgentOrchestrator(
                     }
                     sb.toString()
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 update(session) { it.copy(phase = PipelinePhase.FAILED, error = e.message) }
                 emit(PipelineEvent.Error(e.message ?: "第 $i 章生成失败"))
@@ -297,6 +303,8 @@ class AgentOrchestrator(
                     )
                 }
                 parseContinuityOutput(verified, rawChapter)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emptyList<String>() to rawChapter
             }
@@ -326,6 +334,8 @@ class AgentOrchestrator(
                         maxTokens = PromptTemplates.agent("polish-editor").maxTokens
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 corrected
             }

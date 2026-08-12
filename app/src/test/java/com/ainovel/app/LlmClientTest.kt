@@ -5,7 +5,10 @@ import com.ainovel.app.domain.agent.ConnectionResult
 import com.ainovel.app.domain.agent.ContentPolicyException
 import com.ainovel.app.domain.model.ApiConfig
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -130,6 +133,23 @@ class LlmClientTest {
 
         val chunks = client.streamChat("system", "user", 0.8, 4000).toList()
         assertThat(chunks).containsExactly("你", "好")
+    }
+
+    @Test
+    fun streamChat_cancellation_interruptsBlockingCall() = runBlocking {
+        // 服务端永不返回响应，客户端在等待期间取消
+        server.enqueue(
+            MockResponse()
+                .setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE)
+        )
+        val job = launch {
+            runCatching { client.streamChat("system", "user", 0.8, 4000).toList() }
+        }
+        delay(200)
+        job.cancel()
+        // 若 call.cancel 生效，join 应在毫秒级返回；5 秒内未返回则断言失败
+        kotlinx.coroutines.withTimeout(5000) { job.join() }
+        assertThat(job.isCompleted).isTrue()
     }
 
     @Test
