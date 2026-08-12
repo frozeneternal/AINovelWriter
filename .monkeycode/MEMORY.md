@@ -126,3 +126,4 @@ Entries discovered by the Agent during task execution should follow this format:
   - 创作管线每章的时间瓶颈：章节作者(流式全文) → 连续性编辑(强制完整重写一章) → 润色编辑(完整重写一章)，一章正文最多被完整生成 3 遍。最大可优化点是连续性编辑——绝大多数章节无设定冲突，但旧 prompt 强制输出【修正后章节】完整正文，白耗一次完整 LLM 生成
   - 修复模式：continuity-editor prompt 改为"仅发现问题时才输出【修正后章节】正文，无问题只输出【一致性报告】- 无设定冲突"；parseContinuityOutput 在无修正章节时回退原章节正文（fallback），绝不能把报告文本当作正文返回（旧代码 `return issues to output.trim()` 会把报告当章节，是新 prompt 生效后的隐患）
   - 润色编辑是质量保证的最后一道，不要跳过或降级；若后续还想提速，考虑上下文裁剪（recentChaptersInContext 全文注入）而非削弱润色
+  - 上下文裁剪落地：ContextManager 默认 recentChaptersInContext 从 5 降到 3，每章只保留最近 3 章全文（连贯性核心），更早章节经 SummaryCompressor 压缩为摘要注入，显著减小输入 token 规模、加快每次 LLM 生成的首 token
