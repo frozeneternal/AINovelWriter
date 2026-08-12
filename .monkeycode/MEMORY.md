@@ -107,3 +107,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - 详情页"后台创作"卡片状态不能只靠按钮点击时写本地 UiState：重进页面会丢失。useCase 增加 observePaused(novelId) StateFlow（getOrPut 时用 sessions[novelId]?.state?.value?.paused 初始化，pause/resume 调 setPaused，registerJob 的 invokeOnCompletion 与 cancel 里复位 false），详情页订阅它刷新 creationPaused 卡片与暂停/继续按钮
   - 暂停期间章节数不变的验证：暂停发生在章节流式调用中时，流式跑完即挂起，连续性/润色不会再执行，dao.getChapters 仍为原数量；resume 后跑完剩余章节
   - "暂停后不能继续"的根因：resume() 之前只清 paused 标记、不还原 phase。若用户快速暂停后立刻恢复（管线尚未到达 awaitResume 挂起点），管线执行到 awaitResume 时 paused 已是 false 直接 return 跳过，phase 永远停在 PAUSED，UI 持续显示"继续生成"按钮，用户误以为无法继续。修复：resume() 里若 phase==PAUSED 则同时恢复为 WRITE_CHAPTER 并 emit StateChanged，并新增断言 resume 后 phase 立即离开 PAUSED
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while adding auto-retry when generation hits content policy (违禁词/敏感内容) review
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 内容合规违规（违禁词/敏感内容）与普通错误要用独立异常区分：新增 ContentPolicyException(IOException 子类)。LlmClient 在 HTTP 错误响应中识别 content_policy_violation / content_policy / content_filter / inappropriate_content / unsafe_content / moderation 等英文 code，以及"敏感词/违禁/违规内容/不合规内容/sensitive content/inappropriate/unsafe content/violated our policy/safety system"等关键词，命中则抛 ContentPolicyException，否则仍抛 IOException
+  - AgentOrchestrator 的统一重试模式：`withContentComplianceRetry(systemPrompt, userMessage) { sys, user -> llm.xxx(...) }`，捕获 ContentPolicyException 后给 userMessage 末尾追加【内容合规要求】指令（要求用含蓄/隐喻/间接表达规避违禁词、保持剧情与人设完整），最多重试 2 次，重试耗尽抛原异常由调用方决定降级或 FAILED。世界观/大纲/章节/连续性/润色 5 处调用都要包这层；连续性/润色本身有 catch 降级（回退原文），违规重试耗尽后仍走原降级，不中断管线
+  - 流式章节生成（streamChat）的违规发生在 collect 阶段，重试 lambda 里要包含整个 collect 收集逻辑（每次重试重建 StringBuilder），awaitResume 也要放进重试 lambda 内，避免重试期间跳过暂停检查
+  - 测试模拟违规：FakeLlmGateway 增加 contentPolicyFailForSystemPrompt（按 systemPrompt 匹配）+ contentPolicyFailRemaining（剩余失败次数，首次抛、重试成功用=1）+ recordedUserMessages（记录每次调用 userMessage，用于断言重试追加了合规指令）
