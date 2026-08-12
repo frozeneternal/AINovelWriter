@@ -156,9 +156,13 @@ class NovelCreationUseCase @Inject constructor(
         activeJobs[novelId] = job
         setRunning(novelId, true)
         job.invokeOnCompletion {
-            activeJobs.remove(novelId)
-            setRunning(novelId, false)
-            setPaused(novelId, false)
+            // 仅当 activeJobs 仍指向自己时才清理，避免旧 job 的取消完成回调
+            // 误删紧随其后注册的新 job（停止后立即重新续写的场景）
+            if (activeJobs[novelId] === job) {
+                activeJobs.remove(novelId)
+                setRunning(novelId, false)
+                setPaused(novelId, false)
+            }
         }
     }
 
@@ -310,6 +314,8 @@ class NovelCreationUseCase @Inject constructor(
             session.reset()
         }
         sessions.remove(novelId)
+        // 停止续写后清除续写标志，防止重新进入页面时自动重启续写管线
+        continuationFlags.remove(novelId)
         setRunning(novelId, false)
         setPaused(novelId, false)
     }

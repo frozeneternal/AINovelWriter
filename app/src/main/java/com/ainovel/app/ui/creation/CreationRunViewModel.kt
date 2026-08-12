@@ -117,6 +117,9 @@ class CreationRunViewModel @Inject constructor(
     }
 
     fun stop() {
+        // 先切断事件流，避免取消完成前的残留 StateChanged/Token 事件把 CANCELLED 覆盖回"创作中"
+        eventsJob?.cancel()
+        eventsJob = null
         creationUseCase.cancel(novelId)
         _state.value = _state.value.copy(phase = PipelinePhase.CANCELLED, message = "已停止")
     }

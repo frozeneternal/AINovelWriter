@@ -706,6 +706,42 @@ class NovelCreationUseCaseTest {
     }
 
     @Test
+    fun cancel_clearsContinuationFlag_preventsAutoRestart() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            Thread.sleep(200)
+            when {
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 2)).isTrue()
+        assertThat(useCase.isContinuationMode(novelId)).isTrue()
+
+        useCase.cancel(novelId)
+        assertThat(useCase.isRunning(novelId)).isFalse()
+        // 关键：停止后清除续写标志，重新进入页面（resume=true）不会自动重启续写管线
+        assertThat(useCase.isContinuationMode(novelId)).isFalse()
+
+        // 停止后再次启动续写仍可正常工作（新的一次续写）
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 1)).isTrue()
+        kotlinx.coroutines.withTimeout(15000) {
+            while (useCase.isRunning(novelId)) delay(100)
+        }
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
+    }
+
+    @Test
     fun resumeBeforePipelineReachesPausePointStillCompletes() = runBlocking {
         val novelId = seedImportedNovel(3)
         val fake = FakeLlmGateway()
