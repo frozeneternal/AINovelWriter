@@ -42,6 +42,39 @@ class AgentOrchestrator(
     private val contextManager: ContextManager
 ) {
 
+    private companion object {
+        const val CONTENT_RETRY_MAX = 2
+        const val CONTENT_COMPLIANCE_HINT =
+            "\n\n【内容合规要求】\n" +
+                "上轮请求因触发内容安全审核被拒绝。请调整上述创作要求：避免任何可能触发" +
+                "违禁词或敏感内容审查的表述，改用含蓄、隐喻、间接的方式表达相同情节与人物，" +
+                "保持剧情推进与人物塑造完整，但不得出现任何违规词句。"
+    }
+
+    /**
+     * 对 LLM 调用做内容合规自动重试：捕获 [ContentPolicyException] 后，
+     * 在用户消息末尾追加合规指令并重试，最多 [CONTENT_RETRY_MAX] 次。
+     * 重试耗尽仍失败则抛出原异常，由调用方决定降级或失败。
+     */
+    private suspend fun <T> withContentComplianceRetry(
+        systemPrompt: String,
+        userMessage: String,
+        block: suspend (systemPrompt: String, userMessage: String) -> T
+    ): T {
+        var attempts = 0
+        var currentSystem = systemPrompt
+        var currentUser = userMessage
+        while (true) {
+            try {
+                return block(currentSystem, currentUser)
+            } catch (e: ContentPolicyException) {
+                attempts++
+                if (attempts > CONTENT_RETRY_MAX) throw e
+                currentUser = currentUser + CONTENT_COMPLIANCE_HINT
+            }
+        }
+    }
+
     fun run(
         request: PipelineRequest,
         session: CreationSession
@@ -89,7 +122,7 @@ class AgentOrchestrator(
 
             awaitResume(session, "已恢复，继续构建设定…")
             worldview = try {
-                llm.complete(
+                withContentComplianceRetry(
                     systemPrompt = PromptTemplates.agent("worldview-architect").systemPrompt,
                     userMessage = PromptTemplates.buildNovelRequest(
                         title = request.novelTitle,
@@ -97,10 +130,15 @@ class AgentOrchestrator(
                         theme = request.theme,
                         chapterCount = request.totalChapters,
                         style = request.style
-                    ).content,
-                    temperature = PromptTemplates.agent("worldview-architect").temperature,
-                    maxTokens = PromptTemplates.agent("worldview-architect").maxTokens
-                )
+                    ).content
+                ) { sys, user ->
+                    llm.complete(
+                        systemPrompt = sys,
+                        userMessage = user,
+                        temperature = PromptTemplates.agent("worldview-architect").temperature,
+                        maxTokens = PromptTemplates.agent("worldview-architect").maxTokens
+                    )
+                }
             } catch (e: Exception) {
                 update(session) { it.copy(phase = PipelinePhase.FAILED, error = e.message) }
                 emit(PipelineEvent.Error(e.message ?: "世界观生成失败"))
@@ -121,12 +159,17 @@ class AgentOrchestrator(
 
             awaitResume(session, "已恢复，继续规划结构…")
             outline = try {
-                llm.complete(
+                withContentComplianceRetry(
                     systemPrompt = PromptTemplates.agent("outline-planner").systemPrompt,
-                    userMessage = "书名：《${request.novelTitle}》\n题材：${request.genre}\n预计章节数：${request.totalChapters}\n\n【世界观设定】\n${worldview.take(6000)}",
-                    temperature = PromptTemplates.agent("outline-planner").temperature,
-                    maxTokens = PromptTemplates.agent("outline-planner").maxTokens
-                )
+                    userMessage = "书名：《${request.novelTitle}》\n题材：${request.genre}\n预计章节数：${request.totalChapters}\n\n【世界观设定】\n${worldview.take(6000)}"
+                ) { sys, user ->
+                    llm.complete(
+                        systemPrompt = sys,
+                        userMessage = user,
+                        temperature = PromptTemplates.agent("outline-planner").temperature,
+                        maxTokens = PromptTemplates.agent("outline-planner").maxTokens
+                    )
+                }
             } catch (e: Exception) {
                 update(session) { it.copy(phase = PipelinePhase.FAILED, error = e.message) }
                 emit(PipelineEvent.Error(e.message ?: "大纲生成失败"))
@@ -173,8 +216,6 @@ class AgentOrchestrator(
             )
 
             val rawChapter = try {
-                val sb = StringBuilder()
-                awaitResume(session, "已恢复，继续创作第 $i 章…")
                 val systemPrompt = buildString {
                     append(PromptTemplates.agent("chapter-author").systemPrompt)
                     if (!request.styleProfile.isNullOrBlank()) {
@@ -184,17 +225,24 @@ class AgentOrchestrator(
                         append("开篇与上一章结尾自然衔接，不得突兀改变风格。")
                     }
                 }
-                llm.streamChat(
+                withContentComplianceRetry(
                     systemPrompt = systemPrompt,
-                    userMessage = context.toUserPrompt(),
-                    temperature = PromptTemplates.agent("chapter-author").temperature,
-                    maxTokens = PromptTemplates.agent("chapter-author").maxTokens
-                ).collect { chunk ->
-                    sb.append(chunk)
-                    session.update { it.copy(streamingText = sb.toString()) }
-                    emit(PipelineEvent.Token(chunk))
+                    userMessage = context.toUserPrompt()
+                ) { sys, user ->
+                    val sb = StringBuilder()
+                    awaitResume(session, "已恢复，继续创作第 $i 章…")
+                    llm.streamChat(
+                        systemPrompt = sys,
+                        userMessage = user,
+                        temperature = PromptTemplates.agent("chapter-author").temperature,
+                        maxTokens = PromptTemplates.agent("chapter-author").maxTokens
+                    ).collect { chunk ->
+                        sb.append(chunk)
+                        session.update { it.copy(streamingText = sb.toString()) }
+                        emit(PipelineEvent.Token(chunk))
+                    }
+                    sb.toString()
                 }
-                sb.toString()
             } catch (e: Exception) {
                 update(session) { it.copy(phase = PipelinePhase.FAILED, error = e.message) }
                 emit(PipelineEvent.Error(e.message ?: "第 $i 章生成失败"))
@@ -214,7 +262,7 @@ class AgentOrchestrator(
 
             awaitResume(session, "已恢复，继续校验第 $i 章…")
             val (issues, corrected) = try {
-                val verified = llm.complete(
+                val verified = withContentComplianceRetry(
                     systemPrompt = PromptTemplates.agent("continuity-editor").systemPrompt,
                     userMessage = buildString {
                         append("【世界观设定】\n").append(worldview.take(5000))
@@ -232,10 +280,15 @@ class AgentOrchestrator(
                             append(request.styleProfile)
                         }
                         append("\n\n【本章正文】\n").append(rawChapter)
-                    },
-                    temperature = PromptTemplates.agent("continuity-editor").temperature,
-                    maxTokens = PromptTemplates.agent("continuity-editor").maxTokens
-                )
+                    }
+                ) { sys, user ->
+                    llm.complete(
+                        systemPrompt = sys,
+                        userMessage = user,
+                        temperature = PromptTemplates.agent("continuity-editor").temperature,
+                        maxTokens = PromptTemplates.agent("continuity-editor").maxTokens
+                    )
+                }
                 parseContinuityOutput(verified, rawChapter)
             } catch (e: Exception) {
                 emptyList<String>() to rawChapter
@@ -248,7 +301,7 @@ class AgentOrchestrator(
 
             awaitResume(session, "已恢复，继续润色第 $i 章…")
             val finalChapter = try {
-                llm.complete(
+                withContentComplianceRetry(
                     systemPrompt = PromptTemplates.agent("polish-editor").systemPrompt,
                     userMessage = buildString {
                         if (!request.styleProfile.isNullOrBlank()) {
@@ -257,10 +310,15 @@ class AgentOrchestrator(
                             append("\n\n")
                         }
                         append(corrected)
-                    },
-                    temperature = PromptTemplates.agent("polish-editor").temperature,
-                    maxTokens = PromptTemplates.agent("polish-editor").maxTokens
-                )
+                    }
+                ) { sys, user ->
+                    llm.complete(
+                        systemPrompt = sys,
+                        userMessage = user,
+                        temperature = PromptTemplates.agent("polish-editor").temperature,
+                        maxTokens = PromptTemplates.agent("polish-editor").maxTokens
+                    )
+                }
             } catch (e: Exception) {
                 corrected
             }

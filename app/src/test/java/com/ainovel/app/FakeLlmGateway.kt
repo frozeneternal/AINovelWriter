@@ -1,6 +1,7 @@
 package com.ainovel.app
 
 import com.ainovel.app.domain.agent.ConnectionResult
+import com.ainovel.app.domain.agent.ContentPolicyException
 import com.ainovel.app.domain.agent.LlmGateway
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -10,6 +11,9 @@ class FakeLlmGateway : LlmGateway {
         "【生成结果】$user"
     }
     var failForSystemPrompt: String? = null
+    var contentPolicyFailForSystemPrompt: String? = null
+    var contentPolicyFailRemaining: Int = 1
+    val recordedUserMessages: MutableList<String> = mutableListOf()
 
     override suspend fun streamChat(
         systemPrompt: String,
@@ -17,8 +21,17 @@ class FakeLlmGateway : LlmGateway {
         temperature: Double,
         maxTokens: Int
     ): Flow<String> {
+        recordedUserMessages += userMessage
         failForSystemPrompt?.let {
             if (systemPrompt.contains(it)) throw IllegalStateException("模拟失败")
+        }
+        contentPolicyFailForSystemPrompt?.let {
+            if (systemPrompt.contains(it)) {
+                if (contentPolicyFailRemaining > 0) {
+                    contentPolicyFailRemaining--
+                    throw ContentPolicyException("内容因安全审核被拒绝")
+                }
+            }
         }
         val full = completeHandler(systemPrompt, userMessage, temperature, maxTokens)
         // 按字符分块模拟流式输出
@@ -33,8 +46,17 @@ class FakeLlmGateway : LlmGateway {
         temperature: Double,
         maxTokens: Int
     ): String {
+        recordedUserMessages += userMessage
         failForSystemPrompt?.let {
             if (systemPrompt.contains(it)) throw IllegalStateException("模拟失败")
+        }
+        contentPolicyFailForSystemPrompt?.let {
+            if (systemPrompt.contains(it)) {
+                if (contentPolicyFailRemaining > 0) {
+                    contentPolicyFailRemaining--
+                    throw ContentPolicyException("内容因安全审核被拒绝")
+                }
+            }
         }
         return completeHandler(systemPrompt, userMessage, temperature, maxTokens)
     }

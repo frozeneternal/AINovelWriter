@@ -2,6 +2,7 @@ package com.ainovel.app
 
 import com.ainovel.app.data.remote.LlmClient
 import com.ainovel.app.domain.agent.ConnectionResult
+import com.ainovel.app.domain.agent.ContentPolicyException
 import com.ainovel.app.domain.model.ApiConfig
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.toList
@@ -70,6 +71,49 @@ class LlmClientTest {
             client.complete("system", "user", 0.8, 4000)
         }.exceptionOrNull()
         assertThat(exception?.message).contains("Invalid API key")
+        assertThat(exception).isInstanceOf(java.io.IOException::class.java)
+        assertThat(exception).isNotInstanceOf(ContentPolicyException::class.java)
+    }
+
+    @Test
+    fun complete_contentPolicyViolation_throwsContentPolicyException() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody(
+                    """{"error":{"message":"Your request was rejected by our safety system","code":"content_policy_violation"}}"""
+                )
+        )
+        val exception = runCatching {
+            client.complete("system", "user", 0.8, 4000)
+        }.exceptionOrNull()
+        assertThat(exception).isInstanceOf(ContentPolicyException::class.java)
+    }
+
+    @Test
+    fun complete_chinesePolicyKeyword_throwsContentPolicyException() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody("""{"error":{"message":"内容含违禁词，已拒绝生成","code":"invalid_request_error"}}""")
+        )
+        val exception = runCatching {
+            client.complete("system", "user", 0.8, 4000)
+        }.exceptionOrNull()
+        assertThat(exception).isInstanceOf(ContentPolicyException::class.java)
+    }
+
+    @Test
+    fun streamChat_contentPolicyViolation_throwsContentPolicyException() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody("""{"error":{"message":"sensitive content detected","code":"content_policy_violation"}}""")
+        )
+        val exception = runCatching {
+            client.streamChat("system", "user", 0.8, 4000).toList()
+        }.exceptionOrNull()
+        assertThat(exception).isInstanceOf(ContentPolicyException::class.java)
     }
 
     @Test

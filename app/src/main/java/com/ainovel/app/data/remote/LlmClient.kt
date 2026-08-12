@@ -1,6 +1,7 @@
 package com.ainovel.app.data.remote
 
 import com.ainovel.app.domain.agent.ConnectionResult
+import com.ainovel.app.domain.agent.ContentPolicyException
 import com.ainovel.app.domain.agent.LlmGateway
 import com.ainovel.app.domain.model.ApiConfig
 import com.ainovel.app.domain.model.ConfigProvider
@@ -79,7 +80,7 @@ class LlmClient(
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw IOException(extractErrorMessage(response.code, body))
+                throw buildError(response.code, body)
             }
             parseCompletion(body)
         }
@@ -191,7 +192,7 @@ class LlmClient(
         if (!response.isSuccessful) {
             val body = response.body?.string().orEmpty()
             response.close()
-            throw IOException(extractErrorMessage(response.code, body))
+            throw buildError(response.code, body)
         }
 
         val source: BufferedSource = response.body?.source() ?: run {
@@ -246,5 +247,40 @@ class LlmClient(
         } catch (e: Exception) {
             "HTTP $code"
         }
+    }
+
+    /**
+     * 区分内容合规违规错误与普通错误。
+     * 命中违禁词/敏感内容审查（OpenAI 兼容 content_policy_violation，或
+     * 常见中文"敏感/违规/不合规"措辞）时抛 [ContentPolicyException]，
+     * 其余错误仍抛 [IOException]，供上层自动追加合规指令后重试。
+     */
+    private fun buildError(code: Int, body: String): Exception {
+        val message = extractErrorMessage(code, body)
+        return if (isContentPolicyViolation(body)) {
+            ContentPolicyException(message)
+        } else {
+            IOException(message)
+        }
+    }
+
+    private fun isContentPolicyViolation(body: String): Boolean {
+        val lower = body.lowercase()
+        val policyCodes = listOf(
+            "content_policy_violation",
+            "content_policy",
+            "content_filter",
+            "policy_violation",
+            "inappropriate_content",
+            "unsafe_content",
+            "moderation"
+        )
+        if (policyCodes.any { lower.contains(it) }) return true
+        val policyKeywords = listOf(
+            "敏感词", "敏感内容", "违禁", "违规内容", "不合规内容",
+            "sensitive content", "inappropriate", "unsafe content",
+            "violated our policy", "safety system"
+        )
+        return policyKeywords.any { lower.contains(it) }
     }
 }
