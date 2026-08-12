@@ -279,8 +279,22 @@ private fun ChapterRow(chapter: ChapterEntity, onClick: () -> Unit) {
             Spacer(Modifier.width(16.dp))
             Column {
                 Text(chapter.title.ifBlank { "第 ${chapter.indexInNovel} 章" }, style = MaterialTheme.typography.bodyLarge)
-                if (chapter.summary != null) {
-                    Text(chapter.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Row {
+                    if (chapter.summary != null) {
+                        Text(
+                            chapter.summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                    if (chapter.content.isNotBlank()) {
+                        Text(
+                            " · ${chapter.content.length} 字",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             }
         }

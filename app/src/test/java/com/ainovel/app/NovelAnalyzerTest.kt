@@ -136,7 +136,7 @@ class NovelAnalyzerTest {
             plotSummary = "主线：成长",
             styleProfile = "叙事视角：第一人称"
         )
-        assertThat(ctx.toUserPrompt()).contains("写作手法指令")
+        assertThat(ctx.toUserPrompt()).contains("续写要求")
         assertThat(ctx.toUserPrompt()).contains("第一人称")
         assertThat(ctx.toUserPrompt()).contains("情节梗概")
     }

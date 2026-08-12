@@ -76,8 +76,13 @@ data class ChapterContext(
         if (recentChapters.isNotBlank()) append("\n\n【前文】\n").append(recentChapters)
         if (chapterTitle.isNotBlank()) append("\n\n【本回目标章节】\n").append(chapterTitle)
         if (styleProfile.isNotBlank()) {
-            append("\n\n【写作手法指令】\n")
-            append("以下为原作者的写作手法画像，续写时必须严格模仿，保持风格一致：\n")
+            append("\n\n【续写要求】\n")
+            append("本回是续写已有小说的章节，必须同时满足：\n")
+            append("1. 情节衔接：承接【前文】最后发生的事件与场景，延续主要人物的当前状态与处境，")
+            append("不推翻前文已确定的剧情，不凭空引入与前文矛盾的人物或设定；")
+            append("如有前文埋下的线索或悬念，可顺势推进或回扣。\n")
+            append("2. 手法模仿：严格模仿以下原作者写作手法画像，保持叙事视角、句式节奏、描写密度、")
+            append("对话风格与悬念手法与全书一致：\n")
             append(styleProfile)
         }
         append("\n\n请根据以上上下文，创作当前章节正文。")

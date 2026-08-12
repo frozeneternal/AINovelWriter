@@ -66,6 +66,13 @@ fun ReaderScreen(
     }
 
     val currentChapter = uiState.chapters.getOrNull(uiState.currentIndex)
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(uiState.currentIndex) {
+        if (currentChapter != null) {
+            scrollState.scrollTo(0)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -122,7 +129,7 @@ fun ReaderScreen(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(scrollState)
                     ) {
                         Text(
                             currentChapter.content,
@@ -131,6 +138,14 @@ fun ReaderScreen(
                             lineHeight = 30.sp
                         )
                     }
+
+                    Text(
+                        "本章 ${currentChapter.content.length} 字",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
 
                     ChapterNavigationBar(
                         currentIndex = uiState.currentIndex,

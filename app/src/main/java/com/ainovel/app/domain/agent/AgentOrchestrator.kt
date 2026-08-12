@@ -189,7 +189,23 @@ class AgentOrchestrator(
             val (issues, corrected) = try {
                 val verified = llm.complete(
                     systemPrompt = PromptTemplates.agent("continuity-editor").systemPrompt,
-                    userMessage = "【世界观设定】\n${worldview.take(5000)}\n\n【大纲】\n${outline.take(2000)}\n\n【本章正文】\n$rawChapter",
+                    userMessage = buildString {
+                        append("【世界观设定】\n").append(worldview.take(5000))
+                        append("\n\n【大纲】\n").append(outline.take(2000))
+                        val recentPrevious = previous.takeLast(3)
+                        if (recentPrevious.isNotEmpty()) {
+                            append("\n\n【前文（最近章节结尾）】\n")
+                            append(recentPrevious.joinToString("\n\n---\n\n") { c ->
+                                c.content.takeLast(800)
+                            })
+                        }
+                        if (!request.styleProfile.isNullOrBlank()) {
+                            append("\n\n【原作写作手法画像】\n")
+                            append("校验情节与人物是否与前文及设定一致时，同时确认本章文风符合作者手法画像：\n")
+                            append(request.styleProfile)
+                        }
+                        append("\n\n【本章正文】\n").append(rawChapter)
+                    },
                     temperature = PromptTemplates.agent("continuity-editor").temperature,
                     maxTokens = PromptTemplates.agent("continuity-editor").maxTokens
                 )
@@ -206,7 +222,14 @@ class AgentOrchestrator(
             val finalChapter = try {
                 llm.complete(
                     systemPrompt = PromptTemplates.agent("polish-editor").systemPrompt,
-                    userMessage = corrected,
+                    userMessage = buildString {
+                        if (!request.styleProfile.isNullOrBlank()) {
+                            append("润色时必须严格保持以下原作者写作手法画像，不得改造成另一种风格：\n")
+                            append(request.styleProfile)
+                            append("\n\n")
+                        }
+                        append(corrected)
+                    },
                     temperature = PromptTemplates.agent("polish-editor").temperature,
                     maxTokens = PromptTemplates.agent("polish-editor").maxTokens
                 )

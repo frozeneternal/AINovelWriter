@@ -70,3 +70,19 @@ Entries discovered by the Agent during task execution should follow this format:
   - 创作管线 UI 卡在"准备中"的典型根因：AgentOrchestrator.run 的 flow 里只调用 session.update { phase = ... } 更新 CreationSession 内部状态，但从不 emit PipelineEvent.StateChanged；而 CreationRunViewModel.handleEvent 只有收到 StateChanged 才更新 UI 的 _state.phase。结果 UI phase 永远停在初始 IDLE（"准备中"），进度条/章节进度不更新，直到流结束才被 Completed 覆盖
   - 修复模式：在 flow 内定义 `suspend fun FlowCollector<PipelineEvent>.update(session, transform)` 局部扩展，先 session.update(transform) 再 emit(PipelineEvent.StateChanged(session.state.value))，所有 phase 变更点都走它；streamingText 由 Token 事件驱动，不要在 update() 里带 streamingText，并在每章开始清空 session 的 streamingText、streaming 结束后再清空一次，避免 StateChanged 携带上一章全文覆盖 UI
   - 排查此类"状态不更新"问题时，先比对"状态生产端（orchestrator/session）"与"状态消费端（ViewModel.handleEvent 对事件的 case 分支）"是否一致，StateChanged 定义了但从未 emit 是最常见盲区
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while fixing "翻页停在底部" and strengthening continuation writing
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 阅读页翻章后停在底部：Compose `verticalScroll(rememberScrollState())` 在重组时保留滚动位置，切章不会自动回到顶部。修复：在 Composable 顶部创建 `val scrollState = rememberScrollState()`，用 `LaunchedEffect(uiState.currentIndex) { if (currentChapter != null) scrollState.scrollTo(0) }` 在章节索引变化时重置到顶部
+  - 续写链路手法画像/prompt 文案相关测试断言注意：NovelAnalyzerTest 与 NovelCreationUseCaseTest 断言 `toUserPrompt()`/章节 prompt 包含特定文案（如"写作手法指令"）。若改动 ContextManager.toUserPrompt 的文案标签（改为"续写要求"），必须同步更新这两处测试断言，否则误报失败
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while strengthening continuation writing to match previous plot & writing style
+- Category: Workflow & Collaboration
+- Instructions:
+  - 续写场景的"贴合前文情节与写作手法"由三层组成：① 导入时 NovelAnalyzer 的 plot-style-analyzer 生成 styleProfile/plotSummary 持久化到 WorldviewEntity；② runContinuation 读取它们注入 PipelineRequest(styleProfile/plotSummary/skipSetup=true)；③ orchestrator 每章构建章节作者 prompt 时带上手法画像，并在【续写要求】指令中明确要求承接前文结尾、延续人物状态、不推翻已有剧情
+  - continuity-editor 校验时携带最近 3 章结尾+手法画像（防止只查世界观/大纲而漏掉情节与文风连贯性）；polish-editor 润色时携带手法画像（防止润色后风格走样）。若后续再调上下文组装，这两处 userMessage 是 buildString 拼装，别只传 rawChapter

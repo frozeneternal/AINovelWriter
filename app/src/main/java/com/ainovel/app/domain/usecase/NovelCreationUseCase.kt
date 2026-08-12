@@ -143,6 +143,11 @@ class NovelCreationUseCase @Inject constructor(
         val session = CreationSession(novelId, mode)
         sessions[novelId] = session
 
+        val targetTotalChapters = startIndex + totalNewChapters - 1
+        novelRepository.getNovel(novelId)?.let { n ->
+            novelRepository.updateNovel(n.copy(totalChapters = targetTotalChapters))
+        }
+
         return orchestrator.run(
             request = PipelineRequest(
                 novelId = novelId,
@@ -150,7 +155,7 @@ class NovelCreationUseCase @Inject constructor(
                 genre = "续写",
                 theme = "",
                 style = "严格模仿原作者手法",
-                totalChapters = startIndex + totalNewChapters - 1,
+                totalChapters = targetTotalChapters,
                 mode = mode,
                 startChapterIndex = startIndex,
                 styleProfile = styleProfile,
