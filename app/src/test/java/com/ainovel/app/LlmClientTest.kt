@@ -41,7 +41,10 @@ class LlmClientTest {
 
     @After
     fun tearDown() {
-        server.shutdown()
+        // 取消类测试的 server 端请求可能仍在 setBodyDelay 的 sleep 中，
+        // shutdown() 默认 5 秒超时等不到其完成会抛 "Gave up waiting for queue to shut down"，
+        // 这是 MockWebServer 的已知时序限制，与断言无关，忽略即可。
+        runCatching { server.shutdown() }
     }
 
     @Test
@@ -148,6 +151,45 @@ class LlmClientTest {
         delay(200)
         job.cancel()
         // 若 call.cancel 生效，join 应在毫秒级返回；5 秒内未返回则断言失败
+        kotlinx.coroutines.withTimeout(5000) { job.join() }
+        assertThat(job.isCompleted).isTrue()
+    }
+
+    @Test
+    fun streamChat_cancellation_duringStreaming_interruptsCall() = runBlocking {
+        // 响应头立即返回，但 body 延迟 30 秒发送：模拟流式输出过程中点击停止
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n")
+                .setBodyDelay(3_000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        )
+        val job = launch {
+            runCatching { client.streamChat("system", "user", 0.8, 4000).toList() }
+        }
+        delay(300)
+        job.cancel()
+        // 读取阶段也须立即取消：若 runBlockingWithCall 未生效，join 将等 30 秒 body 延迟
+        kotlinx.coroutines.withTimeout(5000) { job.join() }
+        assertThat(job.isCompleted).isTrue()
+    }
+
+    @Test
+    fun complete_cancellation_duringBodyRead_interruptsCall() = runBlocking {
+        // 响应头立即返回，但 body 延迟 30 秒发送：模拟非流式读取中点停止
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"choices":[{"message":{"content":"你好"}}]}""")
+                .setBodyDelay(3_000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        )
+        val job = launch {
+            runCatching { client.complete("system", "user", 0.8, 4000) }
+        }
+        delay(300)
+        job.cancel()
         kotlinx.coroutines.withTimeout(5000) { job.join() }
         assertThat(job.isCompleted).isTrue()
     }

@@ -7,8 +7,7 @@ import com.ainovel.app.domain.model.ApiConfig
 import com.ainovel.app.domain.model.ConfigProvider
 import com.ainovel.app.domain.model.ModelConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
@@ -84,12 +83,13 @@ class LlmClient(
             throw IOException("未配置文本模型 API Key")
         }
         val request = buildChatRequest(config, systemPrompt, userMessage, stream = false)
-        val response = awaitResponse(client.newCall(request))
+        val call = client.newCall(request)
+        val response = awaitResponse(call)
         response.use {
-            val body = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
-                throw buildError(it.code, body)
+                throw buildError(it.code, runBlockingWithCall(call) { it.body?.string().orEmpty() })
             }
+            val body = runBlockingWithCall(call) { it.body?.string().orEmpty() }
             parseCompletion(body)
         }
     }
@@ -219,7 +219,8 @@ class LlmClient(
     }
 
     private suspend fun FlowCollector<String>.emitStream(request: okhttp3.Request, config: ModelConfig) {
-        val response = awaitResponse(client.newCall(request))
+        val call = client.newCall(request)
+        val response = awaitResponse(call)
         if (!response.isSuccessful) {
             val body = response.body?.string().orEmpty()
             response.close()
@@ -232,9 +233,8 @@ class LlmClient(
         }
 
         try {
-            while (!source.exhausted()) {
-                currentCoroutineContext().ensureActive()
-                val line = source.readUtf8Line() ?: break
+            while (true) {
+                val line = runBlockingWithCall(call) { source.readUtf8Line() } ?: break
                 if (!line.startsWith("data:")) continue
                 val data = line.removePrefix("data:").trim()
                 if (data == "[DONE]") break
@@ -242,6 +242,41 @@ class LlmClient(
             }
         } finally {
             response.close()
+        }
+    }
+
+    /**
+     * 在阻塞式网络读取（readUtf8Line/body.string）期间把协程取消同步绑定到 [Call.cancel]。
+     *
+     * 关键：阻塞读必须 dispatch 到独立 IO 线程执行，而 continuation 立即挂起。
+     * 若直接在 [suspendCancellableCoroutine] 的 block 内同步执行阻塞读，
+     * 协程没有真正挂起，取消无法注入，invokeOnCancellation 不会触发。
+     * 本实现保证取消瞬间同步触发 [Call.cancel]，中断底层阻塞读，
+     * 使"停止生成/暂停"在流式输出或完整响应读取过程中立即生效。
+     *
+     * 取消引发的 IOException（Socket closed）被转回 [CancellationException]，
+     * 避免被上层误判为生成失败。
+     */
+    private suspend fun <T> runBlockingWithCall(
+        call: Call,
+        block: () -> T
+    ): T = suspendCancellableCoroutine { cont ->
+        cont.invokeOnCancellation { call.cancel() }
+        Dispatchers.IO.dispatch(Dispatchers.IO) {
+            try {
+                val result = block()
+                if (cont.isCancelled) {
+                    cont.resumeWithException(CancellationException())
+                } else {
+                    cont.resume(result)
+                }
+            } catch (e: IOException) {
+                if (cont.isCancelled) {
+                    cont.resumeWithException(CancellationException())
+                } else {
+                    cont.resumeWithException(e)
+                }
+            }
         }
     }
 
