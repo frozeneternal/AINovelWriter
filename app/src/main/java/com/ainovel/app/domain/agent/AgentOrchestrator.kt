@@ -27,7 +27,8 @@ data class PipelineRequest(
     val existingWorldview: String = "",
     val existingChapters: List<PreviousChapter> = emptyList(),
     val continuationDirection: String = "",
-    val chapterWordCount: Int = 0
+    val chapterWordCount: Int = 0,
+    val planContinuationOutline: Boolean = false
 )
 
 data class PipelineResult(
@@ -115,8 +116,48 @@ class AgentOrchestrator(
         val outline: String
         if (request.skipSetup) {
             worldview = request.existingWorldview
-            outline = request.plotSummary.orEmpty()
+            outline = if (request.planContinuationOutline) {
+                update(session) { it.copy(phase = PipelinePhase.OUTLINE, message = "大纲规划师规划续写章节…") }
+                emit(PipelineEvent.AgentStarted(PromptTemplates.agent("outline-planner")))
+                awaitResume(session, "已恢复，继续规划续写章节…")
+                try {
+                    val newChapterCount = request.totalChapters - request.startChapterIndex + 1
+                    val recentContext = request.existingChapters.takeLast(3).joinToString("\n\n---\n\n") { c ->
+                        "${c.title}\n${c.content.takeLast(800)}"
+                    }
+                    withContentComplianceRetry(
+                        systemPrompt = PromptTemplates.agent("outline-planner").systemPrompt + """
+
+【续写大纲规划任务】
+现有小说已写到第 ${request.startChapterIndex - 1} 章。请为后续的 $newChapterCount 个章节（第 ${request.startChapterIndex}~${request.totalChapters} 章）规划详细大纲。
+要求：
+1. 每章要点格式：第 N 章 《章节名》：本章核心事件 + 悬念钩子 + 与前章衔接点
+2. 严格承接前文章节的剧情走向，不得重复已发生的情节、场景或桥段
+3. 新章节必须推进剧情：引入新的冲突、目标、角色关系或场景，杜绝与前文套路化重复
+4. 注重章末悬念，让读者持续追读
+5. 每章要点控制在 50-100 字
+""",
+                        userMessage = "书名：《${request.novelTitle}》\n续写方向：${request.continuationDirection.ifBlank { "按原作者风格与情节走向续写" }}\n\n【前文最近章节结尾】\n$recentContext"
+                    ) { sys, user ->
+                        llm.complete(
+                            systemPrompt = sys,
+                            userMessage = user,
+                            temperature = PromptTemplates.agent("outline-planner").temperature,
+                            maxTokens = PromptTemplates.agent("outline-planner").maxTokens
+                        )
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    request.plotSummary.orEmpty()
+                }
+            } else {
+                request.plotSummary.orEmpty()
+            }
             update(session) { it.copy(phase = PipelinePhase.WRITE_CHAPTER, message = "按原作手法续写中…") }
+            if (outline.isNotBlank()) {
+                emit(PipelineEvent.AgentFinished(PromptTemplates.agent("outline-planner"), outline))
+            }
         } else {
             update(session) { it.copy(phase = PipelinePhase.WORLDVIEW, message = "世界观架构师构建设定中…") }
             emit(PipelineEvent.AgentStarted(PromptTemplates.agent("worldview-architect")))
@@ -232,6 +273,14 @@ class AgentOrchestrator(
                         append("\n【原作写作手法画像】\n")
                         append(request.styleProfile)
                     }
+                    if (request.planContinuationOutline) {
+                        append("\n\n【续写推进要求】")
+                        append("\n本章是已有小说的续写章节。剧情必须严格沿【大纲】中本章要点推进：")
+                        append("\n1. 本章必须发生【大纲】指定的新事件、新冲突或新进展，不得复述、重复或改写前文已发生的情节、场景、对话与桥段；")
+                        append("\n2. 若本章设定与前文相似场景，必须以新事件驱动，严禁套路化重复；")
+                        append("\n3. 只推进本章对应的剧情节点，不得提前展开后续章节内容，也不得循环回退到已写过的情节；")
+                        append("\n4. 与前文衔接处只做简短自然承接，重心放在本章新剧情上。")
+                    }
                     if (request.chapterWordCount > 0) {
                         append("\n\n【本章字数要求】")
                         append("\n本章正文目标字数：${request.chapterWordCount} 字左右（可上下浮动 10%），")
@@ -300,6 +349,12 @@ class AgentOrchestrator(
                             append("\n\n【原作写作手法画像】\n")
                             append("校验情节与人物是否与前文及设定一致时，同时确认本章文风符合作者手法画像：\n")
                             append(request.styleProfile)
+                        }
+                        if (request.planContinuationOutline) {
+                            append("\n\n【重复检查要求】\n")
+                            append("除了常规一致性校验外，必须额外检查本章是否与前文（特别是最近几章）出现情节、")
+                            append("场景、对话或桥段上的重复/复述。若发现本章与已写章节内容高度重复或推进不足，")
+                            append("将其列为问题，并在【修正后章节】中改写为推进剧情的新内容，不得保留重复段落。")
                         }
                         append("\n\n【本章正文】\n").append(rawChapter)
                     }

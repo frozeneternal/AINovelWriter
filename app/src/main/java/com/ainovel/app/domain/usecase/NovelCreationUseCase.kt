@@ -370,7 +370,8 @@ class NovelCreationUseCase @Inject constructor(
                 existingWorldview = worldviewText,
                 existingChapters = previousChapters,
                 continuationDirection = continuationDirection,
-                chapterWordCount = chapterWordCount
+                chapterWordCount = chapterWordCount,
+                planContinuationOutline = true
             ),
             session = session
         ).onEach { event ->

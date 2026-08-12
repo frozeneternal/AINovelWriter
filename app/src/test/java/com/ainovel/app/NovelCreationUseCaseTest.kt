@@ -103,7 +103,7 @@ class NovelCreationUseCaseTest {
         val fake = FakeLlmGateway()
         val recordedPrompts = mutableListOf<String>()
         fake.completeHandler = { systemPrompt, userMessage, _, _ ->
-            if (systemPrompt.contains("章节作者")) {
+            if (systemPrompt.contains("才华横溢的小说章节作者")) {
                 recordedPrompts += userMessage
                 "第 11 章 新篇章\n续写正文内容".repeat(30)
             } else if (systemPrompt.contains("连续性编辑")) {
@@ -156,7 +156,7 @@ class NovelCreationUseCaseTest {
         val chapterPrompts = mutableListOf<String>()
         fake.completeHandler = { systemPrompt, userMessage, _, _ ->
             when {
-                systemPrompt.contains("章节作者") -> {
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
                     chapterPrompts += userMessage
                     "第 4 章 续写\n正文".repeat(30)
                 }
@@ -190,7 +190,7 @@ class NovelCreationUseCaseTest {
         val chapterPrompts = mutableListOf<String>()
         fake.completeHandler = { systemPrompt, userMessage, _, _ ->
             when {
-                systemPrompt.contains("章节作者") -> {
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
                     chapterPrompts += userMessage
                     "第 4 章 续写\n正文".repeat(30)
                 }
@@ -226,7 +226,7 @@ class NovelCreationUseCaseTest {
         val chapterPrompts = mutableListOf<String>()
         fake.completeHandler = { systemPrompt, userMessage, _, _ ->
             when {
-                systemPrompt.contains("章节作者") -> {
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
                     chapterPrompts += userMessage
                     "第 4 章 续写\n正文".repeat(30)
                 }
@@ -260,7 +260,7 @@ class NovelCreationUseCaseTest {
         fake.completeHandler = { systemPrompt, _, _, _ ->
             invokedAgents += systemPrompt.take(30)
             when {
-                systemPrompt.contains("章节作者") -> "第 3 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 3 章 续写\n正文".repeat(30)
                 systemPrompt.contains("连续性编辑") ->
                     "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 3 章 续写\n修正正文".repeat(20)
                 systemPrompt.contains("润色编辑") -> "第 3 章 续写\n润色正文".repeat(20)
@@ -283,8 +283,50 @@ class NovelCreationUseCaseTest {
         assertThat(started).contains("chapter-author")
         assertThat(started).contains("continuity-editor")
         assertThat(started).contains("polish-editor")
+        // 续写会先规划逐章大纲，但不重建世界观/全书大纲
+        assertThat(started).contains("outline-planner")
         assertThat(started).doesNotContain("worldview-architect")
-        assertThat(started).doesNotContain("outline-planner")
+    }
+
+    @Test
+    fun runContinuation_plansDedicatedOutlineToAvoidRepetition() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        val outlinePrompts = mutableListOf<String>()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("续写大纲规划任务") -> {
+                    outlinePrompts += userMessage
+                    "第 4 章 《帝都之行》\n第 5 章 《新对手》"
+                }
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(20)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        useCase.runContinuation(
+            novelId = novelId,
+            totalNewChapters = 2,
+            mode = CreationMode.AUTO
+        ).toList()
+
+        assertThat(outlinePrompts).isNotEmpty()
+        assertThat(outlinePrompts.first()).contains("【前文最近章节结尾】")
+        // 规划大纲的 systemPrompt 含明确的反重复要求
+        val outlineSystemPrompt = fake.recordedSystemPrompts.first { it.contains("续写大纲规划任务") }
+        assertThat(outlineSystemPrompt).contains("不得重复已发生的情节、场景或桥段")
+        // 规划的大纲被注入章节作者 systemPrompt，作为逐章推进目标
+        val chapterPrompt = fake.recordedSystemPrompts.last { it.contains("才华横溢的小说章节作者") }
+        assertThat(chapterPrompt).contains("【续写推进要求】")
+        assertThat(chapterPrompt).contains("不得复述、重复或改写前文已发生的情节")
     }
 
     @Test
@@ -293,7 +335,7 @@ class NovelCreationUseCaseTest {
         val fake = FakeLlmGateway()
         fake.completeHandler = { systemPrompt, _, _, _ ->
             when {
-                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
                 systemPrompt.contains("连续性编辑") ->
                     "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
                 systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
@@ -345,7 +387,7 @@ class NovelCreationUseCaseTest {
         fake.completeHandler = { systemPrompt, _, _, _ ->
             Thread.sleep(2000)
             when {
-                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
                 else -> "第 4 章 续写\n正文".repeat(30)
             }
         }
@@ -370,7 +412,7 @@ class NovelCreationUseCaseTest {
         val started = java.util.concurrent.CountDownLatch(1)
         fake.completeHandler = { systemPrompt, _, _, _ ->
             when {
-                systemPrompt.contains("章节作者") -> {
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
                     started.countDown()
                     Thread.sleep(5000)
                     "第 4 章 续写\n正文".repeat(30)
@@ -435,7 +477,7 @@ class NovelCreationUseCaseTest {
         val fake = FakeLlmGateway()
         fake.completeHandler = { systemPrompt, _, _, _ ->
             when {
-                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
                 systemPrompt.contains("连续性编辑") ->
                     "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
                 systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
@@ -472,7 +514,7 @@ class NovelCreationUseCaseTest {
         fake.completeHandler = { systemPrompt, _, _, _ ->
             Thread.sleep(300)
             when {
-                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
                 systemPrompt.contains("连续性编辑") ->
                     "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
                 systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
@@ -523,7 +565,7 @@ class NovelCreationUseCaseTest {
         fake.completeHandler = { systemPrompt, _, _, _ ->
             Thread.sleep(300)
             when {
-                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
                 systemPrompt.contains("连续性编辑") ->
                     "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
                 systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
@@ -574,7 +616,7 @@ class NovelCreationUseCaseTest {
         fake.completeHandler = { systemPrompt, _, _, _ ->
             Thread.sleep(200)
             when {
-                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 4 章 续写\n正文".repeat(30)
                 systemPrompt.contains("连续性编辑") ->
                     "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
                 systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)

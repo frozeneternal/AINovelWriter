@@ -25,7 +25,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> agentOutputs["outline"] ?: "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> agentOutputs["polished"] ?: "第 1 章 《开端》\n润色后的正文"
-                systemPrompt.contains("章节作者") -> agentOutputs["chapter"] ?: "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> agentOutputs["chapter"] ?: "第 1 章 《开端》\n章节正文内容"
                 else -> userMessage
             }
         }
@@ -67,7 +67,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》\n第 2 章 《冲突》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n第一回正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n第一回正文"
                 else -> ""
             }
         }
@@ -122,7 +122,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- [人物] 主角年龄前后不一致 → 修正为16岁\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文"
                 else -> ""
             }
         }
@@ -156,7 +156,7 @@ class AgentOrchestratorTest {
                 // 无问题时仅输出简短报告，不输出修正后章节
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节原始正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节原始正文"
                 else -> ""
             }
         }
@@ -276,7 +276,7 @@ class AgentOrchestratorTest {
             when {
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> {
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
                     started.set(true)
                     Thread.sleep(3000)
                     "第 1 章 《开端》\n章节正文"
@@ -365,7 +365,7 @@ class AgentOrchestratorTest {
             when {
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突"
                 systemPrompt.contains("润色编辑") -> "第 2 章 《后续》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 2 章 《后续》\n续写正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 2 章 《后续》\n续写正文内容"
                 else -> ""
             }
         }
@@ -433,7 +433,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
@@ -474,7 +474,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
@@ -510,7 +510,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
@@ -545,7 +545,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
@@ -580,7 +580,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
@@ -615,7 +615,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
@@ -650,7 +650,7 @@ class AgentOrchestratorTest {
                 systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
                 systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
                 systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色后的正文"
-                systemPrompt.contains("章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
                 else -> ""
             }
         }
