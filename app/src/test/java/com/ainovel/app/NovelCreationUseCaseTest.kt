@@ -525,4 +525,47 @@ class NovelCreationUseCaseTest {
         assertThat(dao.getChapters(novelId)).hasSize(5)
         assertThat(chaptersWhilePaused).isEqualTo(3)
     }
+
+    @Test
+    fun resumeBeforePipelineReachesPausePointStillCompletes() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            Thread.sleep(200)
+            when {
+                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        useCase.startContinuationInBackground(novelId, totalNewChapters = 2)
+        // 模拟用户快速操作：暂停后立刻恢复（管线可能尚未到达挂起点）
+        delay(100)
+        useCase.pause(novelId)
+        assertThat(useCase.isPaused(novelId)).isTrue()
+        delay(100)
+        useCase.resume(novelId)
+        assertThat(useCase.isPaused(novelId)).isFalse()
+        // 关键断言：resume 立即把 phase 从 PAUSED 恢复为 WRITE_CHAPTER，
+        // 否则 UI 停在"已暂停"按钮，用户误以为无法继续
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.WRITE_CHAPTER)
+
+        kotlinx.coroutines.withTimeout(20000) {
+            while (useCase.isRunning(novelId)) {
+                delay(100)
+            }
+        }
+
+        // 关键断言：无论暂停/恢复时序如何，管线最终都应完成全部章节
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
+        assertThat(dao.getChapters(novelId)).hasSize(5)
+    }
 }

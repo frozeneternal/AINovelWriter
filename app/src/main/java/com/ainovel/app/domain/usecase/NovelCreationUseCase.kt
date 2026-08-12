@@ -5,6 +5,7 @@ import com.ainovel.app.data.repository.NovelRepository
 import com.ainovel.app.domain.agent.AgentOrchestrator
 import com.ainovel.app.domain.agent.CreationSession
 import com.ainovel.app.domain.agent.PipelineEvent
+import com.ainovel.app.domain.agent.PipelinePhase
 import com.ainovel.app.domain.agent.PipelineRequest
 import com.ainovel.app.domain.agent.PipelineState
 import com.ainovel.app.domain.model.CreationMode
@@ -255,7 +256,7 @@ class NovelCreationUseCase @Inject constructor(
         sessions[novelId]?.update {
             it.copy(
                 paused = true,
-                phase = com.ainovel.app.domain.agent.PipelinePhase.PAUSED,
+                phase = PipelinePhase.PAUSED,
                 message = "已暂停，点击继续恢复生成",
                 currentAgent = null,
                 streamingText = ""
@@ -268,7 +269,21 @@ class NovelCreationUseCase @Inject constructor(
     }
 
     fun resume(novelId: Long) {
-        sessions[novelId]?.update { it.copy(paused = false) }
+        sessions[novelId]?.update {
+            it.copy(
+                paused = false,
+                phase = if (it.phase == PipelinePhase.PAUSED) {
+                    PipelinePhase.WRITE_CHAPTER
+                } else {
+                    it.phase
+                },
+                message = if (it.phase == PipelinePhase.PAUSED) {
+                    "已恢复，继续生成…"
+                } else {
+                    it.message
+                }
+            )
+        }
         setPaused(novelId, false)
         sessions[novelId]?.state?.value?.let {
             eventFlows[novelId]?.tryEmit(PipelineEvent.StateChanged(it))
