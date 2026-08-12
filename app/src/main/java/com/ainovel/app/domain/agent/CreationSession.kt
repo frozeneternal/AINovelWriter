@@ -15,6 +15,7 @@ enum class PipelinePhase {
     WRITE_CHAPTER,
     CONTINUITY_CHECK,
     POLISH,
+    PAUSED,
     COMPLETED,
     FAILED,
     CANCELLED
@@ -30,6 +31,7 @@ data class PipelineState(
     val message: String = "",
     val streamingText: String = "",
     val waitingConfirm: Boolean = false,
+    val paused: Boolean = false,
     val error: String? = null
 )
 

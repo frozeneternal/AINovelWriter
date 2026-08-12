@@ -16,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,7 +69,8 @@ fun CreationRunScreen(
         state.phase == PipelinePhase.OUTLINE ||
         state.phase == PipelinePhase.WRITE_CHAPTER ||
         state.phase == PipelinePhase.CONTINUITY_CHECK ||
-        state.phase == PipelinePhase.POLISH
+        state.phase == PipelinePhase.POLISH ||
+        state.phase == PipelinePhase.PAUSED
 
     Scaffold(
         topBar = {
@@ -235,11 +238,32 @@ fun CreationRunScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center
                     ) {
+                        if (state.phase == PipelinePhase.PAUSED) {
+                            Button(
+                                onClick = viewModel::resume,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("继续生成")
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = viewModel::pause,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("暂停")
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = viewModel::stop,
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error
-                            )
+                            ),
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))

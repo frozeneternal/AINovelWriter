@@ -91,11 +91,20 @@ class CreationRunViewModel @Inject constructor(
             PipelinePhase.WRITE_CHAPTER -> "章节作者创作第 ${_state.value.chapterIndex}/${_state.value.totalChapters} 章"
             PipelinePhase.CONTINUITY_CHECK -> "连续性编辑校验"
             PipelinePhase.POLISH -> "润色编辑润色"
+            PipelinePhase.PAUSED -> "已暂停"
             PipelinePhase.COMPLETED -> "创作完成"
             PipelinePhase.FAILED -> "创作失败"
             PipelinePhase.CANCELLED -> "已取消"
             PipelinePhase.IDLE -> "准备中"
         }
+    }
+
+    fun pause() {
+        creationUseCase.pause(novelId)
+    }
+
+    fun resume() {
+        creationUseCase.resume(novelId)
     }
 
     fun stop() {

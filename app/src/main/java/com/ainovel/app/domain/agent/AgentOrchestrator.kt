@@ -124,6 +124,30 @@ class AgentOrchestrator(
         for (i in request.startChapterIndex..request.totalChapters) {
             if (!session.isActive) break
 
+            // 暂停状态：在章节边界挂起，等待恢复或取消
+            if (session.state.value.paused) {
+                update(session) {
+                    it.copy(
+                        phase = PipelinePhase.PAUSED,
+                        message = "已暂停，点击继续恢复生成",
+                        currentAgent = null,
+                        streamingText = ""
+                    )
+                }
+                emit(PipelineEvent.StateChanged(session.state.value))
+                while (session.state.value.paused && session.isActive) {
+                    kotlinx.coroutines.delay(200)
+                }
+                if (!session.isActive) break
+                update(session) {
+                    it.copy(
+                        phase = PipelinePhase.WRITE_CHAPTER,
+                        message = "已恢复，继续创作第 $i 章…"
+                    )
+                }
+                emit(PipelineEvent.StateChanged(session.state.value))
+            }
+
             val chapterTitle = extractChapterTitle(outline, i)
             val previous = request.existingChapters + chapters.map { PreviousChapter(it.title, it.content) }
 

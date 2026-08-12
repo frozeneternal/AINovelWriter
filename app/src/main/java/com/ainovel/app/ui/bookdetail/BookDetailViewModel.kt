@@ -6,6 +6,7 @@ import com.ainovel.app.data.local.entity.ChapterEntity
 import com.ainovel.app.data.local.entity.NovelEntity
 import com.ainovel.app.data.repository.AssetRepository
 import com.ainovel.app.data.repository.NovelRepository
+import com.ainovel.app.domain.usecase.NovelCreationUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,13 +19,16 @@ data class BookDetailUiState(
     val chapters: List<ChapterEntity> = emptyList(),
     val generatingCover: Boolean = false,
     val generatingVideo: Boolean = false,
-    val snackbarMessage: String? = null
+    val snackbarMessage: String? = null,
+    val creationRunning: Boolean = false,
+    val creationPaused: Boolean = false
 )
 
 @HiltViewModel
 class BookDetailViewModel @Inject constructor(
     private val novelRepository: NovelRepository,
-    private val assetRepository: AssetRepository
+    private val assetRepository: AssetRepository,
+    private val creationUseCase: NovelCreationUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookDetailUiState())
@@ -46,6 +50,21 @@ class BookDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(chapters = chapters)
             }
         }
+        viewModelScope.launch {
+            creationUseCase.observeRunning(novelId).collect { running ->
+                _uiState.value = _uiState.value.copy(creationRunning = running)
+            }
+        }
+    }
+
+    fun pauseCreation() {
+        creationUseCase.pause(novelId)
+        _uiState.value = _uiState.value.copy(creationPaused = true)
+    }
+
+    fun resumeCreation() {
+        creationUseCase.resume(novelId)
+        _uiState.value = _uiState.value.copy(creationPaused = false)
     }
 
     fun generateCover() {

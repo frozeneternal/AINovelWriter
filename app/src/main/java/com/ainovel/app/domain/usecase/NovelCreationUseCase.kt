@@ -233,6 +233,34 @@ class NovelCreationUseCase @Inject constructor(
         sessions[novelId]?.update { it.copy(waitingConfirm = false) }
     }
 
+    /**
+     * 暂停后台创作管线。当前章节完成后在章节边界挂起，可通过 [resume] 恢复。
+     */
+    fun pause(novelId: Long) {
+        sessions[novelId]?.update {
+            it.copy(
+                paused = true,
+                phase = com.ainovel.app.domain.agent.PipelinePhase.PAUSED,
+                message = "已暂停，点击继续恢复生成",
+                currentAgent = null,
+                streamingText = ""
+            )
+        }
+        sessions[novelId]?.state?.value?.let {
+            eventFlows[novelId]?.tryEmit(PipelineEvent.StateChanged(it))
+        }
+    }
+
+    fun resume(novelId: Long) {
+        sessions[novelId]?.update { it.copy(paused = false) }
+        sessions[novelId]?.state?.value?.let {
+            eventFlows[novelId]?.tryEmit(PipelineEvent.StateChanged(it))
+        }
+    }
+
+    fun isPaused(novelId: Long): Boolean =
+        sessions[novelId]?.state?.value?.paused == true
+
     fun cancel(novelId: Long) {
         activeJobs.remove(novelId)?.cancel()
         sessions[novelId]?.update { it.copy(waitingConfirm = false) }

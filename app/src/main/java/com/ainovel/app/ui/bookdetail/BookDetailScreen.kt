@@ -20,6 +20,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
@@ -162,8 +164,7 @@ fun BookDetailScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clickable(onClick = onResumeCreation),
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer
                         )
@@ -172,11 +173,15 @@ fun BookDetailScreen(
                             modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            if (uiState.creationPaused) {
+                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            } else {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "正在后台创作中",
+                                    if (uiState.creationPaused) "后台创作已暂停" else "正在后台创作中",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -186,7 +191,23 @@ fun BookDetailScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "查看进度")
+                            if (uiState.creationPaused) {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.resumeCreation()
+                                        onResumeCreation()
+                                    }
+                                ) {
+                                    Text("继续")
+                                }
+                            } else {
+                                TextButton(onClick = viewModel::pauseCreation) {
+                                    Text("暂停")
+                                }
+                            }
+                            IconButton(onClick = onResumeCreation) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "查看进度")
+                            }
                         }
                     }
                     Spacer(Modifier.height(8.dp))
