@@ -30,13 +30,11 @@ class CreationRunViewModel @Inject constructor(
 
     private var novelId: Long = 0L
     private var started = false
-    private var continuation = false
     private var eventsJob: Job? = null
 
-    fun startIfNeeded(id: Long, isContinuation: Boolean = false) {
+    fun startIfNeeded(id: Long, isContinuation: Boolean = false, resume: Boolean = false) {
         if (started) return
         novelId = id
-        continuation = isContinuation
         started = true
 
         // 若该书已在后台创作中，先用快照恢复进度，再订阅后续事件
@@ -49,8 +47,10 @@ class CreationRunViewModel @Inject constructor(
         if (creationUseCase.isRunning(id)) return
 
         viewModelScope.launch {
-            // 以 useCase 记录的续写标志为准（从详情页"后台创作中"卡片进入时不丢失续写语义）
-            val effectiveContinuation = isContinuation || creationUseCase.isContinuationMode(id)
+            // 明确意图优先：resume=false 时以用户选择的续写/创作为准，
+            // 避免 useCase 遗留的续写标志把"重新创作"误判为续写
+            val effectiveContinuation =
+                if (resume) creationUseCase.isContinuationMode(id) else isContinuation
             if (effectiveContinuation) {
                 creationUseCase.startContinuationInBackground(id, 5)
             } else {

@@ -22,15 +22,15 @@ object Routes {
     const val HISTORY = "history"
     const val SETTINGS = "settings"
     const val CREATION_SETUP = "creation_setup"
-    const val CREATION_RUN = "creation_run/{novelId}?continuation={continuation}"
+    const val CREATION_RUN = "creation_run/{novelId}?continuation={continuation}&resume={resume}"
     const val BOOK_DETAIL = "book_detail/{novelId}"
     const val READER = "reader/{novelId}/{chapterIndex}"
     const val WORLDVIEW = "worldview/{novelId}"
     const val IMPORT = "import"
     const val ANALYSIS_RUN = "analysis_run/{novelId}"
 
-    fun creationRun(novelId: Long, continuation: Boolean = false) =
-        "creation_run/$novelId?continuation=$continuation"
+    fun creationRun(novelId: Long, continuation: Boolean = false, resume: Boolean = false) =
+        "creation_run/$novelId?continuation=$continuation&resume=$resume"
     fun bookDetail(novelId: Long) = "book_detail/$novelId"
     fun reader(novelId: Long, chapterIndex: Int) = "reader/$novelId/$chapterIndex"
     fun worldview(novelId: Long) = "worldview/$novelId"
@@ -105,14 +105,20 @@ fun AppNavHost() {
                 navArgument("continuation") {
                     type = NavType.BoolType
                     defaultValue = false
+                },
+                navArgument("resume") {
+                    type = NavType.BoolType
+                    defaultValue = false
                 }
             )
         ) { entry ->
             val novelId = entry.arguments?.getLong("novelId") ?: 0L
             val isContinuation = entry.arguments?.getBoolean("continuation") ?: false
+            val resume = entry.arguments?.getBoolean("resume") ?: false
             CreationRunScreen(
                 novelId = novelId,
                 isContinuation = isContinuation,
+                resume = resume,
                 onBack = { navController.popBackStack() },
                 onOpenNovel = { id ->
                     navController.navigate(Routes.bookDetail(id)) {
@@ -140,7 +146,7 @@ fun AppNavHost() {
                     navController.navigate(Routes.creationRun(novelId, continuation = true))
                 },
                 onResumeCreation = {
-                    navController.navigate(Routes.creationRun(novelId))
+                    navController.navigate(Routes.creationRun(novelId, resume = true))
                 }
             )
         }

@@ -50,6 +50,7 @@ import com.ainovel.app.ui.settings.ModelSwitcher
 fun CreationRunScreen(
     novelId: Long,
     isContinuation: Boolean = false,
+    resume: Boolean = false,
     onBack: () -> Unit,
     onOpenNovel: (Long) -> Unit,
     viewModel: CreationRunViewModel = hiltViewModel()
@@ -58,7 +59,7 @@ fun CreationRunScreen(
     val phaseLabel by viewModel.phaseLabel.collectAsStateWithLifecycle()
 
     LaunchedEffect(novelId) {
-        viewModel.startIfNeeded(novelId, isContinuation)
+        viewModel.startIfNeeded(novelId, isContinuation, resume)
     }
 
     val isRunning = state.phase == PipelinePhase.WORLDVIEW ||
