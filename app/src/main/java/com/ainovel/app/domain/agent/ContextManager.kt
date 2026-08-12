@@ -6,7 +6,7 @@ package com.ainovel.app.domain.agent
 class ContextManager(
     private val summaryCompressor: SummaryCompressor,
     private val maxContextTokens: Int = 6000,
-    private val recentChaptersInContext: Int = 5
+    private val recentChaptersInContext: Int = 3
 ) {
 
     /**

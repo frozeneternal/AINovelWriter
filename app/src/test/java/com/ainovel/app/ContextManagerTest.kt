@@ -87,4 +87,26 @@ class ContextManagerTest {
         assertThat(prompt).doesNotContain("【剧情发展方向】")
         assertThat(prompt).contains("续写要求")
     }
+
+    @Test
+    fun buildChapterContext_defaultKeepsOnlyRecentThreeFullChapters() = runTest {
+        // 默认 recentChaptersInContext=3：最近的 3 章保留全文，更早的压缩为摘要，
+        // 控制输入 token 规模以加快生成
+        val defaultManager = ContextManager(SummaryCompressor())
+        val previous = (1..6).map { PreviousChapter("第${it}章", "第${it}章正文内容") }
+        val context = defaultManager.buildChapterContext(
+            novelTitle = "测试",
+            worldview = "世界设定",
+            outline = "大纲",
+            previousChapters = previous,
+            chapterTitle = "第七章"
+        )
+        val prompt = context.toUserPrompt()
+        // 最近 3 章全文
+        assertThat(prompt).contains("第4章")
+        assertThat(prompt).contains("第6章")
+        // 更早章节压缩为摘要
+        assertThat(prompt).contains("前文摘要")
+        assertThat(prompt).contains("第1章")
+    }
 }
