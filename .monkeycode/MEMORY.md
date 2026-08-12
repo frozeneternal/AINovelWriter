@@ -136,3 +136,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - "续写不像原作者手法"的四层根因与修复：① NovelAnalyzer.splitPlotAndStyle 旧实现用 `indexOf("## 情节梗概")`/`indexOf("## 手法画像")` 精确匹配且强制梗概在前，LLM 标题文字/顺序稍有偏差就整个返回 `text to ""`，styleProfile 变空、续写回退到写死的通用文风（任何小说都套同一套"第三人称限知/长短句交错"）。改按行正则匹配标题（容忍 ### 手法画像、【手法画像】等变体）并顺序无关地分节，style 提取失败只丢画像不丢梗概 ② plot-style-analyzer prompt 增加【风格样本】部分，要求摘录 2-3 段 60-150 字原句（一段对话、一段描写、一段叙事/心理）作为续写句式范本——模型凭抽象画像（"长短句交错"）模仿远不如直接给原句 ③ 章节作者 systemPrompt 只空喊"严格模仿"不注入画像内容，实际画像埋在 userMessage 末尾被前文淹没；现在把 request.styleProfile 完整拼进 systemPrompt【原作写作手法画像】段，并把续写温度从 0.9 降到 0.6（模仿文风需要低温度） ④ runContinuation 的 styleProfile fallback 从写死通用文风改为引导模型"研读【前文】自行归纳原作者风格"，避免没有画像时套通用腔调
   - ContextManager.toUserPrompt 的【续写要求】段措辞要明确"逐条对照画像与样本模仿、禁止通用小说腔调"，并把画像标题写成"【原作写作手法画像与风格样本】"让模型识别可模仿的句式样本
   - 测试提示：FakeLlmGateway 增加 recordedSystemPrompts 记录 systemPrompt（此前只记录 userMessage），才能断言画像注入到章节作者 systemPrompt；新增测试验证 splitPlotAndStyle 对标题变体/顺序颠倒/带风格样本三种形态都能正确提取
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while fixing "停止生成按钮不好使" (stop button had no effect)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - "停止生成"不生效的三层根因：① 管线内 `catch (e: Exception)` 会吞掉 `CancellationException`（它是 Exception 子类），job.cancel() 后协程取消异常被 catch 捕获，连续性/润色编辑的 catch 甚至直接降级后继续下一章，管线根本不停止。修复：所有 catch 块前加 `catch (e: kotlinx.coroutines.CancellationException) { throw e }`（AgentOrchestrator 有 5 处：世界观/大纲/章节/连续性/润色）② OkHttp `client.newCall().execute()` 与流式 `readUtf8Line()` 是阻塞调用，协程取消无法中断网络 IO，要等请求自然返回。修复：用 `suspendCancellableCoroutine` + `call.enqueue` + `cont.invokeOnCancellation { call.cancel() }` 封装 awaitResponse，流式读取循环加 `currentCoroutineContext().ensureActive()` ③ cancel() 只移除 session 不发状态事件，UI 停在旧画面或重进后显示"准备中"。修复：cancel() 先 emit 一个 CANCELLED 的 StateChanged 再 reset
+  - 测试注意：runTest 的虚拟时钟与真实 `Thread.sleep`/网络阻塞混用会导致 withTimeout 在虚拟时间下永远等不到真实线程完成而超时。Fake 用 Thread.sleep 模拟耗时 + 轮询 flag 的测试必须用 `runBlocking`（真实调度）+ `launch(Dispatchers.Default)`；MockWebServer 模拟永不返回的请求用 `SocketPolicy.NO_RESPONSE`（setHeadersDelay 会让 shutdown() 在 tearDown 报 "Gave up waiting for queue to shut down"）
+  - 取消传播链路：job.cancel() → 协程在下个挂起点抛 CancellationException → 若被 catch(Exception) 吞则失效；正确做法是 rethrow 或让挂起点（awaitResume 的 delay、flow 的 emit、OkHttp 回调）自然传播取消
