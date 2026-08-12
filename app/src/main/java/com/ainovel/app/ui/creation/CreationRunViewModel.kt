@@ -9,6 +9,7 @@ import com.ainovel.app.domain.agent.PipelineState
 import com.ainovel.app.domain.model.CreationMode
 import com.ainovel.app.domain.usecase.NovelCreationUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,20 +31,29 @@ class CreationRunViewModel @Inject constructor(
     private var novelId: Long = 0L
     private var started = false
     private var continuation = false
+    private var eventsJob: Job? = null
 
     fun startIfNeeded(id: Long, isContinuation: Boolean = false) {
         if (started) return
         novelId = id
         continuation = isContinuation
         started = true
+
+        // 若该书已在后台创作中，先用快照恢复进度，再订阅后续事件
+        creationUseCase.currentState(id)?.let { _state.value = it }
+        eventsJob = viewModelScope.launch {
+            creationUseCase.events(id).collect { handleEvent(it) }
+        }
+
         viewModelScope.launch {
             if (isContinuation) {
-                launchContinuation()
+                creationUseCase.startContinuationInBackground(id, 5)
             } else {
                 val novel = novelRepository.getNovel(id) ?: return@launch
                 val existingChapters = novelRepository.countChapters(id)
                 val startIndex = (existingChapters + 1).coerceAtMost(novel.totalChapters)
-                launchPipeline(
+                creationUseCase.startPipelineInBackground(
+                    novelId = id,
                     title = novel.title,
                     genre = novel.genre,
                     theme = novel.synopsis,
@@ -52,16 +62,6 @@ class CreationRunViewModel @Inject constructor(
                     startChapterIndex = startIndex
                 )
             }
-        }
-    }
-
-    private suspend fun launchContinuation() {
-        creationUseCase.runContinuation(
-            novelId = novelId,
-            totalNewChapters = 5,
-            mode = CreationMode.AUTO
-        ).collect { event ->
-            handleEvent(event)
         }
     }
 
@@ -88,32 +88,6 @@ class CreationRunViewModel @Inject constructor(
         }
     }
 
-    fun launchPipeline(
-        title: String,
-        genre: String,
-        theme: String,
-        style: String,
-        totalChapters: Int,
-        startChapterIndex: Int = 1
-    ) {
-        if (started) return
-        started = true
-        viewModelScope.launch {
-            creationUseCase.runPipeline(
-                novelId = novelId,
-                title = title,
-                genre = genre,
-                theme = theme,
-                style = style,
-                totalChapters = totalChapters,
-                mode = CreationMode.AUTO,
-                startChapterIndex = startChapterIndex
-            ).collect { event ->
-                handleEvent(event)
-            }
-        }
-    }
-
     fun stop() {
         creationUseCase.cancel(novelId)
         _state.value = _state.value.copy(phase = PipelinePhase.CANCELLED, message = "已停止")
@@ -125,6 +99,6 @@ class CreationRunViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        creationUseCase.cancel(novelId)
+        eventsJob?.cancel()
     }
 }

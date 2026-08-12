@@ -86,3 +86,13 @@ Entries discovered by the Agent during task execution should follow this format:
 - Instructions:
   - 续写场景的"贴合前文情节与写作手法"由三层组成：① 导入时 NovelAnalyzer 的 plot-style-analyzer 生成 styleProfile/plotSummary 持久化到 WorldviewEntity；② runContinuation 读取它们注入 PipelineRequest(styleProfile/plotSummary/skipSetup=true)；③ orchestrator 每章构建章节作者 prompt 时带上手法画像，并在【续写要求】指令中明确要求承接前文结尾、延续人物状态、不推翻已有剧情
   - continuity-editor 校验时携带最近 3 章结尾+手法画像（防止只查世界观/大纲而漏掉情节与文风连贯性）；polish-editor 润色时携带手法画像（防止润色后风格走样）。若后续再调上下文组装，这两处 userMessage 是 buildString 拼装，别只传 rawChapter
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while making creation/continuation run in background
+- Category: Workflow & Collaboration
+- Instructions:
+  - 创作/续写后台化模式：管线收集从 ViewModel 的 viewModelScope 移入 NovelCreationUseCase（@Singleton）内部的应用级 `CoroutineScope(SupervisorJob() + Dispatchers.Default)`。useCase 提供 startPipelineInBackground/startContinuationInBackground（isRunning 去重）+ events(novelId) 共享流 + currentState(novelId) 快照恢复 + observeRunning(novelId)。ViewModel 只订阅 events，onCleared 只取消订阅 Job 不 cancel 管线，退出页面后后台继续生成、章节实时落库，书架/详情页 observe 自动刷新
+  - CreationRunViewModel 重新进入时用 currentState(id) 先恢复 phase 快照再订阅 events，避免进度闪回"准备中"
+  - runPipeline 是普通函数（runContinuation 是 suspend）：需要收集时才执行的操作用 `.onStart { suspendOp() }` 挂到 flow 上，不能直接在函数体调用 suspend 方法；markWriting 置 novel.status=WRITING 就在管线 onStart 时执行，让书架立即显示"创作中"
+  - 测试续写后台行为（NovelCreationUseCaseTest）：fake.completeHandler 是非 suspend lambda，延时用 Thread.sleep 而非 delay；协程内订阅共享流用 import kotlinx.coroutines.launch 的 launch{} + collect { event -> ... }（`collect { events += it }` 会触发类型推断失败）；等待后台完成用 withTimeout + 轮询 isRunning

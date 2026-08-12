@@ -1,6 +1,7 @@
 package com.ainovel.app.ui.bookdetail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Public
@@ -65,6 +67,7 @@ fun BookDetailScreen(
     onOpenWorldview: () -> Unit,
     onStartCreation: () -> Unit,
     onStartContinuation: () -> Unit,
+    onResumeCreation: () -> Unit,
     viewModel: BookDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -146,6 +149,40 @@ fun BookDetailScreen(
                         Spacer(Modifier.height(8.dp))
                         Text(statusLabel(n.status), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
+                }
+
+                if (n.status == NovelStatus.WRITING) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .clickable(onClick = onResumeCreation),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "正在后台创作中",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "已完成 ${n.currentChapterIndex}/${n.totalChapters} 章，可离开本页继续生成",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "查看进度")
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
 
                 Row(

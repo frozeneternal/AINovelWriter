@@ -138,6 +138,9 @@ fun AppNavHost() {
                 },
                 onStartContinuation = {
                     navController.navigate(Routes.creationRun(novelId, continuation = true))
+                },
+                onResumeCreation = {
+                    navController.navigate(Routes.creationRun(novelId))
                 }
             )
         }

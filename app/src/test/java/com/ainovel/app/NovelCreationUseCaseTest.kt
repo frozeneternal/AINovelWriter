@@ -20,7 +20,9 @@ import com.ainovel.app.domain.model.NovelSource
 import com.ainovel.app.domain.model.NovelStatus
 import com.ainovel.app.domain.usecase.NovelCreationUseCase
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -214,5 +216,81 @@ class NovelCreationUseCaseTest {
         assertThat(started).contains("polish-editor")
         assertThat(started).doesNotContain("worldview-architect")
         assertThat(started).doesNotContain("outline-planner")
+    }
+
+    @Test
+    fun startContinuationInBackground_runsInAppScope_andExposesEvents() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(20)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        val events = mutableListOf<PipelineEvent>()
+        val eventsJob = launch {
+            useCase.events(novelId).collect { event -> events += event }
+        }
+        delay(200)
+        assertThat(useCase.isRunning(novelId)).isFalse()
+
+        val started = useCase.startContinuationInBackground(novelId, totalNewChapters = 2)
+        assertThat(started).isTrue()
+        assertThat(useCase.isRunning(novelId)).isTrue()
+        assertThat(useCase.observeRunning(novelId).value).isTrue()
+
+        // 重复启动同一本书应被忽略
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 2)).isFalse()
+
+        // 等待后台管线完成
+        kotlinx.coroutines.withTimeout(15000) {
+            while (useCase.isRunning(novelId)) {
+                delay(100)
+            }
+        }
+
+        val novel = dao.getNovel(novelId)
+        assertThat(novel!!.totalChapters).isEqualTo(5)
+        assertThat(dao.getChapters(novelId)).hasSize(5)
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
+        assertThat(events.any { it is PipelineEvent.Completed }).isTrue()
+        assertThat(useCase.observeRunning(novelId).value).isFalse()
+
+        eventsJob.cancel()
+    }
+
+    @Test
+    fun cancelBackground_stopsPipeline() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            Thread.sleep(2000)
+            when {
+                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 1)).isTrue()
+        assertThat(useCase.isRunning(novelId)).isTrue()
+
+        useCase.cancel(novelId)
+        assertThat(useCase.isRunning(novelId)).isFalse()
+        assertThat(useCase.observeRunning(novelId).value).isFalse()
     }
 }
