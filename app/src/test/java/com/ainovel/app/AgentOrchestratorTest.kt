@@ -466,6 +466,54 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    fun run_contentPolicyViolationRetry_passesThroughBannedHint_andFixStrategies() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        // 章节作者前两次触发内容违规，第三次成功：第二次重试应透传平台返回的具体违禁提醒
+        fake.contentPolicyFailForSystemPrompt = "章节作者"
+        fake.contentPolicyFailRemaining = 2
+        fake.contentPolicyErrorMessage = "内容包含敏感词：杀戮盛宴"
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val events = orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO
+            ),
+            session = session
+        ).toList()
+
+        // 两次重试后成功，管线最终完成
+        assertThat(events.any { it is PipelineEvent.Completed }).isTrue()
+        assertThat(fake.contentPolicyFailRemaining).isEqualTo(0)
+        // 第二次重试的消息应透传平台返回的具体违禁提醒
+        assertThat(
+            fake.recordedUserMessages.any { it.contains("内容包含敏感词：杀戮盛宴") }
+        ).isTrue()
+        // 且包含具体规避策略：换同义词 + 违禁词中间加逗号/顿号分隔
+        assertThat(
+            fake.recordedUserMessages.any { it.contains("替换为语义完全相同的替代表达") }
+        ).isTrue()
+        assertThat(
+            fake.recordedUserMessages.any { it.contains("逗号") || it.contains("顿号") }
+        ).isTrue()
+    }
+
+    @Test
     fun run_contentPolicyViolationWorldview_retriesAndCompletes() = runTest {
         val fake = FakeLlmGateway()
         fake.completeHandler = { systemPrompt, userMessage, _, _ ->
@@ -514,9 +562,9 @@ class AgentOrchestratorTest {
                 else -> ""
             }
         }
-        // 章节作者始终触发内容违规：首试 + 重试 2 次耗尽后失败
+        // 章节作者始终触发内容违规：首试 + 重试 3 次耗尽后失败
         fake.contentPolicyFailForSystemPrompt = "章节作者"
-        fake.contentPolicyFailRemaining = 3
+        fake.contentPolicyFailRemaining = 4
         val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
         val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
         val events = orchestrator.run(

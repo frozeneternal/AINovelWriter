@@ -238,6 +238,10 @@ class LlmClient(
                 if (!line.startsWith("data:")) continue
                 val data = line.removePrefix("data:").trim()
                 if (data == "[DONE]") break
+                // 流式响应中途可能携带 error 事件（如输出到一半触发违禁词审查），
+                // 不能静默跳过，否则输出被截断且无法触发合规重试
+                val error = parseStreamError(data)
+                if (error != null) throw buildError(response.code, error)
                 parseDelta(data)?.let { emit(it) }
             }
         } finally {
@@ -287,6 +291,23 @@ class LlmClient(
             val choice = choices?.firstOrNull() ?: return null
             val delta = (choice as JsonObject)["delta"] as? JsonObject ?: return null
             delta["content"]?.let { it.jsonPrimitive.contentOrNull }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 解析流式响应中的 error 事件（SSE data 载荷内含 "error" 字段）。
+     * 返回完整的 error 载荷字符串供 [buildError] 识别违禁词审查；
+     * 非 error 事件返回 null。
+     */
+    private fun parseStreamError(data: String): String? {
+        return try {
+            val obj = json.parseToJsonElement(data) as JsonObject
+            val error = obj["error"] as? JsonObject ?: return null
+            buildJsonObject {
+                put("error", error)
+            }.toString()
         } catch (e: Exception) {
             null
         }

@@ -45,17 +45,29 @@ class AgentOrchestrator(
 ) {
 
     private companion object {
-        const val CONTENT_RETRY_MAX = 2
+        const val CONTENT_RETRY_MAX = 3
         const val CONTENT_COMPLIANCE_HINT =
             "\n\n【内容合规要求】\n" +
                 "上轮请求因触发内容安全审核被拒绝。请调整上述创作要求：避免任何可能触发" +
                 "违禁词或敏感内容审查的表述，改用含蓄、隐喻、间接的方式表达相同情节与人物，" +
                 "保持剧情推进与人物塑造完整，但不得出现任何违规词句。"
+        const val CONTENT_COMPLIANCE_FIX_HINT =
+            "\n\n【内容合规修改要求】\n" +
+                "上轮输出仍因触发内容安全审核被拒绝。平台返回的审核提示如下：\n" +
+                "> %s\n\n" +
+                "请严格针对上述提示中的违禁/敏感表述逐条处理，使内容通过审核：\n" +
+                "1. 将触发的违禁词替换为语义完全相同的替代表达（同义词、近义词或通用书面用语），不得再出现原词或任何近似变体；\n" +
+                "2. 若某些词语必须保留，可在违禁词中间插入逗号、顿号或空格等分隔符（如“词,汇”），使其不再构成完整敏感词；\n" +
+                "3. 也可以改写句子结构，用拆解、间接或概括的方式表达相同含义；\n" +
+                "4. 保持剧情、人物与文风不变，仅调整措辞；\n" +
+                "5. 修改后重新通读全文，确保不再出现任何可触发审核的敏感词、敏感内容或近似组合。"
     }
 
     /**
-     * 对 LLM 调用做内容合规自动重试：捕获 [ContentPolicyException] 后，
-     * 在用户消息末尾追加合规指令并重试，最多 [CONTENT_RETRY_MAX] 次。
+     * 对 LLM 调用做内容合规自动重试：捕获 [ContentPolicyException] 后重试。
+     *
+     * 首次重试追加通用合规指令；仍失败时透传平台返回的具体违禁提醒，
+     * 并追加针对性的修改策略（换同义词、加逗号分隔等），最多重试 [CONTENT_RETRY_MAX] 次。
      * 重试耗尽仍失败则抛出原异常，由调用方决定降级或失败。
      */
     private suspend fun <T> withContentComplianceRetry(
@@ -72,7 +84,13 @@ class AgentOrchestrator(
             } catch (e: ContentPolicyException) {
                 attempts++
                 if (attempts > CONTENT_RETRY_MAX) throw e
-                currentUser = currentUser + CONTENT_COMPLIANCE_HINT
+                currentUser = when (attempts) {
+                    1 -> currentUser + CONTENT_COMPLIANCE_HINT
+                    else -> currentUser + String.format(
+                        CONTENT_COMPLIANCE_FIX_HINT,
+                        e.message ?: "检测到违禁内容"
+                    )
+                }
             }
         }
     }

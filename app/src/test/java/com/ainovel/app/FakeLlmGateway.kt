@@ -13,8 +13,20 @@ class FakeLlmGateway : LlmGateway {
     var failForSystemPrompt: String? = null
     var contentPolicyFailForSystemPrompt: String? = null
     var contentPolicyFailRemaining: Int = 1
+    var contentPolicyErrorMessage: String = "内容因安全审核被拒绝"
     val recordedUserMessages: MutableList<String> = mutableListOf()
     val recordedSystemPrompts: MutableList<String> = mutableListOf()
+
+    private fun maybeFailContentPolicy(systemPrompt: String) {
+        contentPolicyFailForSystemPrompt?.let {
+            if (systemPrompt.contains(it)) {
+                if (contentPolicyFailRemaining > 0) {
+                    contentPolicyFailRemaining--
+                    throw ContentPolicyException(contentPolicyErrorMessage)
+                }
+            }
+        }
+    }
 
     override suspend fun streamChat(
         systemPrompt: String,
@@ -27,14 +39,7 @@ class FakeLlmGateway : LlmGateway {
         failForSystemPrompt?.let {
             if (systemPrompt.contains(it)) throw IllegalStateException("模拟失败")
         }
-        contentPolicyFailForSystemPrompt?.let {
-            if (systemPrompt.contains(it)) {
-                if (contentPolicyFailRemaining > 0) {
-                    contentPolicyFailRemaining--
-                    throw ContentPolicyException("内容因安全审核被拒绝")
-                }
-            }
-        }
+        maybeFailContentPolicy(systemPrompt)
         val full = completeHandler(systemPrompt, userMessage, temperature, maxTokens)
         // 按字符分块模拟流式输出
         return flow {
@@ -53,14 +58,7 @@ class FakeLlmGateway : LlmGateway {
         failForSystemPrompt?.let {
             if (systemPrompt.contains(it)) throw IllegalStateException("模拟失败")
         }
-        contentPolicyFailForSystemPrompt?.let {
-            if (systemPrompt.contains(it)) {
-                if (contentPolicyFailRemaining > 0) {
-                    contentPolicyFailRemaining--
-                    throw ContentPolicyException("内容因安全审核被拒绝")
-                }
-            }
-        }
+        maybeFailContentPolicy(systemPrompt)
         return completeHandler(systemPrompt, userMessage, temperature, maxTokens)
     }
 

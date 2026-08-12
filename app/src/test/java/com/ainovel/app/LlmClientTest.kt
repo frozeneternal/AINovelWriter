@@ -139,6 +139,43 @@ class LlmClientTest {
     }
 
     @Test
+    fun streamChat_midStreamErrorEvent_throwsContentPolicyException() = runTest {
+        // 流式输出中途服务端返回 error 事件（输出到一半触发违禁词审查），
+        // 不得静默吞掉：应抛 ContentPolicyException 供上层合规重试
+        val streamBody = """
+            data: {"choices":[{"delta":{"content":"前"}}]}
+            
+            data: {"error":{"message":"检测到违禁词，已中断生成","code":"content_policy_violation"}}
+            
+        """.trimIndent()
+        server.enqueue(MockResponse().setBody(streamBody).setHeader("Content-Type", "text/event-stream"))
+
+        val exception = runCatching {
+            client.streamChat("system", "user", 0.8, 4000).toList()
+        }.exceptionOrNull()
+        assertThat(exception).isInstanceOf(ContentPolicyException::class.java)
+        assertThat(exception?.message).contains("违禁")
+    }
+
+    @Test
+    fun streamChat_midStreamErrorEvent_genericError_throwsIOException() = runTest {
+        val streamBody = """
+            data: {"choices":[{"delta":{"content":"前"}}]}
+            
+            data: {"error":{"message":"rate limit exceeded","code":"rate_limit"}}
+            
+        """.trimIndent()
+        server.enqueue(MockResponse().setBody(streamBody).setHeader("Content-Type", "text/event-stream"))
+
+        val exception = runCatching {
+            client.streamChat("system", "user", 0.8, 4000).toList()
+        }.exceptionOrNull()
+        assertThat(exception).isInstanceOf(java.io.IOException::class.java)
+        assertThat(exception).isNotInstanceOf(ContentPolicyException::class.java)
+        assertThat(exception?.message).contains("rate limit")
+    }
+
+    @Test
     fun streamChat_cancellation_interruptsBlockingCall() = runBlocking {
         // 服务端永不返回响应，客户端在等待期间取消
         server.enqueue(
