@@ -37,6 +37,7 @@ class NovelCreationUseCase @Inject constructor(
     private val activeJobs = mutableMapOf<Long, Job>()
     private val eventFlows = mutableMapOf<Long, MutableSharedFlow<PipelineEvent>>()
     private val runningStates = mutableMapOf<Long, MutableStateFlow<Boolean>>()
+    private val pausedStates = mutableMapOf<Long, MutableStateFlow<Boolean>>()
     private val continuationFlags = mutableMapOf<Long, Boolean>()
 
     fun getSession(novelId: Long): CreationSession? = sessions[novelId]
@@ -64,6 +65,19 @@ class NovelCreationUseCase @Inject constructor(
 
     private fun setRunning(novelId: Long, running: Boolean) {
         runningStates.getOrPut(novelId) { MutableStateFlow(false) }.value = running
+    }
+
+    /**
+     * 订阅某本书管线的暂停状态（true=已暂停挂起，false=运行中或未开始）。
+     * 详情页/创作页据此显示"暂停/继续"按钮与卡片状态，重进页面后自动恢复。
+     */
+    fun observePaused(novelId: Long): StateFlow<Boolean> =
+        pausedStates.getOrPut(novelId) {
+            MutableStateFlow(sessions[novelId]?.state?.value?.paused == true)
+        }.asStateFlow()
+
+    private fun setPaused(novelId: Long, paused: Boolean) {
+        pausedStates.getOrPut(novelId) { MutableStateFlow(false) }.value = paused
     }
 
     /**
@@ -137,6 +151,7 @@ class NovelCreationUseCase @Inject constructor(
         job.invokeOnCompletion {
             activeJobs.remove(novelId)
             setRunning(novelId, false)
+            setPaused(novelId, false)
         }
     }
 
@@ -246,6 +261,7 @@ class NovelCreationUseCase @Inject constructor(
                 streamingText = ""
             )
         }
+        setPaused(novelId, true)
         sessions[novelId]?.state?.value?.let {
             eventFlows[novelId]?.tryEmit(PipelineEvent.StateChanged(it))
         }
@@ -253,6 +269,7 @@ class NovelCreationUseCase @Inject constructor(
 
     fun resume(novelId: Long) {
         sessions[novelId]?.update { it.copy(paused = false) }
+        setPaused(novelId, false)
         sessions[novelId]?.state?.value?.let {
             eventFlows[novelId]?.tryEmit(PipelineEvent.StateChanged(it))
         }
@@ -267,6 +284,7 @@ class NovelCreationUseCase @Inject constructor(
         sessions[novelId]?.reset()
         sessions.remove(novelId)
         setRunning(novelId, false)
+        setPaused(novelId, false)
     }
 
     /**

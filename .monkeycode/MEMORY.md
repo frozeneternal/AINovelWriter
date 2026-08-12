@@ -96,3 +96,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - CreationRunViewModel 重新进入时用 currentState(id) 先恢复 phase 快照再订阅 events，避免进度闪回"准备中"
   - runPipeline 是普通函数（runContinuation 是 suspend）：需要收集时才执行的操作用 `.onStart { suspendOp() }` 挂到 flow 上，不能直接在函数体调用 suspend 方法；markWriting 置 novel.status=WRITING 就在管线 onStart 时执行，让书架立即显示"创作中"
   - 测试续写后台行为（NovelCreationUseCaseTest）：fake.completeHandler 是非 suspend lambda，延时用 Thread.sleep 而非 delay；协程内订阅共享流用 import kotlinx.coroutines.launch 的 launch{} + collect { event -> ... }（`collect { events += it }` 会触发类型推断失败）；等待后台完成用 withTimeout + 轮询 isRunning
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while fixing "暂停生成不生效" (pause had no visible effect)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 后台创作"暂停不生效"的根因：暂停检查若只放在章节循环边界，暂停时若正处于某次 LLM 调用（章节流式/连续性/润色）或世界观/大纲阶段，管线会跑完当前调用甚至整章才挂起，用户点击后看不到停止，误以为暂停无效
+  - 修复模式：AgentOrchestrator.run 的 flow 内定义 `suspend fun FlowCollector<PipelineEvent>.awaitResume(session, message)`——若 session.state.paused 则 update 到 PAUSED（含 currentAgent=null、streamingText=""）并 delay(200) 轮询等待 resume；恢复后再 update 回 WRITE_CHAPTER。把 awaitResume 插入到每次 LLM 调用之前（世界观、大纲、章节 streamChat、连续性 complete、润色 complete 各一处），暂停最坏只等当前这一次调用结束即挂起，体验即时
+  - 详情页"后台创作"卡片状态不能只靠按钮点击时写本地 UiState：重进页面会丢失。useCase 增加 observePaused(novelId) StateFlow（getOrPut 时用 sessions[novelId]?.state?.value?.paused 初始化，pause/resume 调 setPaused，registerJob 的 invokeOnCompletion 与 cancel 里复位 false），详情页订阅它刷新 creationPaused 卡片与暂停/继续按钮
+  - 暂停期间章节数不变的验证：暂停发生在章节流式调用中时，流式跑完即挂起，连续性/润色不会再执行，dao.getChapters 仍为原数量；resume 后跑完剩余章节

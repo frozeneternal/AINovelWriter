@@ -54,6 +54,27 @@ class AgentOrchestrator(
             emit(PipelineEvent.StateChanged(session.state.value))
         }
 
+        // 在每次 LLM 调用前检查暂停：若已暂停则进入 PAUSED 并挂起，恢复后继续
+        suspend fun FlowCollector<PipelineEvent>.awaitResume(
+            session: CreationSession,
+            message: String
+        ) {
+            if (!session.state.value.paused) return
+            update(session) {
+                it.copy(
+                    phase = PipelinePhase.PAUSED,
+                    message = "已暂停，点击继续恢复生成",
+                    currentAgent = null,
+                    streamingText = ""
+                )
+            }
+            while (session.state.value.paused && session.isActive) {
+                kotlinx.coroutines.delay(200)
+            }
+            if (!session.isActive) return
+            update(session) { it.copy(phase = PipelinePhase.WRITE_CHAPTER, message = message) }
+        }
+
         session.markActive()
 
         val worldview: String
@@ -66,6 +87,7 @@ class AgentOrchestrator(
             update(session) { it.copy(phase = PipelinePhase.WORLDVIEW, message = "世界观架构师构建设定中…") }
             emit(PipelineEvent.AgentStarted(PromptTemplates.agent("worldview-architect")))
 
+            awaitResume(session, "已恢复，继续构建设定…")
             worldview = try {
                 llm.complete(
                     systemPrompt = PromptTemplates.agent("worldview-architect").systemPrompt,
@@ -97,6 +119,7 @@ class AgentOrchestrator(
             update(session) { it.copy(phase = PipelinePhase.OUTLINE, message = "大纲规划师规划结构…") }
             emit(PipelineEvent.AgentStarted(PromptTemplates.agent("outline-planner")))
 
+            awaitResume(session, "已恢复，继续规划结构…")
             outline = try {
                 llm.complete(
                     systemPrompt = PromptTemplates.agent("outline-planner").systemPrompt,
@@ -123,30 +146,6 @@ class AgentOrchestrator(
         val chapters = mutableListOf<ChapterResult>()
         for (i in request.startChapterIndex..request.totalChapters) {
             if (!session.isActive) break
-
-            // 暂停状态：在章节边界挂起，等待恢复或取消
-            if (session.state.value.paused) {
-                update(session) {
-                    it.copy(
-                        phase = PipelinePhase.PAUSED,
-                        message = "已暂停，点击继续恢复生成",
-                        currentAgent = null,
-                        streamingText = ""
-                    )
-                }
-                emit(PipelineEvent.StateChanged(session.state.value))
-                while (session.state.value.paused && session.isActive) {
-                    kotlinx.coroutines.delay(200)
-                }
-                if (!session.isActive) break
-                update(session) {
-                    it.copy(
-                        phase = PipelinePhase.WRITE_CHAPTER,
-                        message = "已恢复，继续创作第 $i 章…"
-                    )
-                }
-                emit(PipelineEvent.StateChanged(session.state.value))
-            }
 
             val chapterTitle = extractChapterTitle(outline, i)
             val previous = request.existingChapters + chapters.map { PreviousChapter(it.title, it.content) }
@@ -175,6 +174,7 @@ class AgentOrchestrator(
 
             val rawChapter = try {
                 val sb = StringBuilder()
+                awaitResume(session, "已恢复，继续创作第 $i 章…")
                 val systemPrompt = buildString {
                     append(PromptTemplates.agent("chapter-author").systemPrompt)
                     if (!request.styleProfile.isNullOrBlank()) {
@@ -212,6 +212,7 @@ class AgentOrchestrator(
             }
             emit(PipelineEvent.AgentStarted(PromptTemplates.agent("continuity-editor")))
 
+            awaitResume(session, "已恢复，继续校验第 $i 章…")
             val (issues, corrected) = try {
                 val verified = llm.complete(
                     systemPrompt = PromptTemplates.agent("continuity-editor").systemPrompt,
@@ -245,6 +246,7 @@ class AgentOrchestrator(
             update(session) { it.copy(phase = PipelinePhase.POLISH, message = "润色编辑润色第 $i 章…") }
             emit(PipelineEvent.AgentStarted(PromptTemplates.agent("polish-editor")))
 
+            awaitResume(session, "已恢复，继续润色第 $i 章…")
             val finalChapter = try {
                 llm.complete(
                     systemPrompt = PromptTemplates.agent("polish-editor").systemPrompt,

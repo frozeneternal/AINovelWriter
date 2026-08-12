@@ -474,4 +474,55 @@ class NovelCreationUseCaseTest {
         assertThat(dao.getChapters(novelId)).hasSize(5)
         assertThat(chaptersWhilePaused).isAtMost(5)
     }
+
+    @Test
+    fun pauseDuringStreamingHoldsAfterCurrentCall() = runBlocking {
+        val novelId = seedImportedNovel(3)
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            Thread.sleep(300)
+            when {
+                systemPrompt.contains("章节作者") -> "第 4 章 续写\n正文".repeat(30)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续写\n润色正文".repeat(20)
+                else -> "第 4 章 续写\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        useCase.startContinuationInBackground(novelId, totalNewChapters = 2)
+        // 等章节作者流式调用开始后立即暂停：当前调用跑完即应挂起，不再进入连续性/润色
+        delay(350)
+        useCase.pause(novelId)
+        assertThat(useCase.isPaused(novelId)).isTrue()
+
+        kotlinx.coroutines.withTimeout(10000) {
+            while (true) {
+                val phase: PipelinePhase? = useCase.currentState(novelId)?.phase
+                if (phase == PipelinePhase.PAUSED) break
+                delay(100)
+            }
+        }
+        // 挂起时仍处于写第 4 章阶段（尚未进入连续性/润色），暂停期间章节数不变
+        assertThat(dao.getChapters(novelId)).hasSize(3)
+        val chaptersWhilePaused = dao.getChapters(novelId).size
+
+        useCase.resume(novelId)
+        assertThat(useCase.isPaused(novelId)).isFalse()
+
+        kotlinx.coroutines.withTimeout(20000) {
+            while (useCase.isRunning(novelId)) {
+                delay(100)
+            }
+        }
+
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
+        assertThat(dao.getChapters(novelId)).hasSize(5)
+        assertThat(chaptersWhilePaused).isEqualTo(3)
+    }
 }

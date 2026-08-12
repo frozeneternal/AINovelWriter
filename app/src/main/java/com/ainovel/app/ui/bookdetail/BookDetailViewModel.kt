@@ -55,16 +55,19 @@ class BookDetailViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(creationRunning = running)
             }
         }
+        viewModelScope.launch {
+            creationUseCase.observePaused(novelId).collect { paused ->
+                _uiState.value = _uiState.value.copy(creationPaused = paused)
+            }
+        }
     }
 
     fun pauseCreation() {
         creationUseCase.pause(novelId)
-        _uiState.value = _uiState.value.copy(creationPaused = true)
     }
 
     fun resumeCreation() {
         creationUseCase.resume(novelId)
-        _uiState.value = _uiState.value.copy(creationPaused = false)
     }
 
     fun generateCover() {
