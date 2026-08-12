@@ -117,3 +117,12 @@ Entries discovered by the Agent during task execution should follow this format:
   - AgentOrchestrator 的统一重试模式：`withContentComplianceRetry(systemPrompt, userMessage) { sys, user -> llm.xxx(...) }`，捕获 ContentPolicyException 后给 userMessage 末尾追加【内容合规要求】指令（要求用含蓄/隐喻/间接表达规避违禁词、保持剧情与人设完整），最多重试 2 次，重试耗尽抛原异常由调用方决定降级或 FAILED。世界观/大纲/章节/连续性/润色 5 处调用都要包这层；连续性/润色本身有 catch 降级（回退原文），违规重试耗尽后仍走原降级，不中断管线
   - 流式章节生成（streamChat）的违规发生在 collect 阶段，重试 lambda 里要包含整个 collect 收集逻辑（每次重试重建 StringBuilder），awaitResume 也要放进重试 lambda 内，避免重试期间跳过暂停检查
   - 测试模拟违规：FakeLlmGateway 增加 contentPolicyFailForSystemPrompt（按 systemPrompt 匹配）+ contentPolicyFailRemaining（剩余失败次数，首次抛、重试成功用=1）+ recordedUserMessages（记录每次调用 userMessage，用于断言重试追加了合规指令）
+
+[Project Knowledge Summary]
+- Date: 2026-08-12
+- Context: Discovered by Agent while optimizing generation speed (每章 3 次完整章节生成的浪费)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 创作管线每章的时间瓶颈：章节作者(流式全文) → 连续性编辑(强制完整重写一章) → 润色编辑(完整重写一章)，一章正文最多被完整生成 3 遍。最大可优化点是连续性编辑——绝大多数章节无设定冲突，但旧 prompt 强制输出【修正后章节】完整正文，白耗一次完整 LLM 生成
+  - 修复模式：continuity-editor prompt 改为"仅发现问题时才输出【修正后章节】正文，无问题只输出【一致性报告】- 无设定冲突"；parseContinuityOutput 在无修正章节时回退原章节正文（fallback），绝不能把报告文本当作正文返回（旧代码 `return issues to output.trim()` 会把报告当章节，是新 prompt 生效后的隐患）
+  - 润色编辑是质量保证的最后一道，不要跳过或降级；若后续还想提速，考虑上下文裁剪（recentChaptersInContext 全文注入）而非削弱润色
