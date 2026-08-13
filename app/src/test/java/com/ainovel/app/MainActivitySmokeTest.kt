@@ -3,9 +3,13 @@ package com.ainovel.app
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
@@ -92,5 +96,54 @@ class MainActivitySmokeTest {
         composeRule.onNodeWithText("导入小说").performClick()
         composeRule.onNodeWithContentDescription("返回").performClick()
         composeRule.onNodeWithText("我的书架").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookDetail_importedNovel_showsContinuationEntries() {
+        runBlocking {
+            novelRepository.importNovel("书架书.txt", "第一章\n\n正文内容")
+        }
+        // 书架列表异步刷新，等待书卡片出现
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("书架书").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("书架书").performClick()
+        // 导入的书展示"按原作手法续写"+"解析档案"，而非"续写/创作"
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("按原作手法续写").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("按原作手法续写").assertIsDisplayed()
+        composeRule.onNodeWithText("解析档案").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookDetail_opensReader_fromChapterRow() {
+        val id = runBlocking {
+            val novelId = novelRepository.importNovel("可读书.txt", "第一章\n\n正文内容")
+            novelRepository.saveImportedChapters(
+                novelId,
+                listOf(1 to ("第一章" to "这是第一章的正文内容，足够长以便阅读。"))
+            )
+            novelId
+        }
+        composeRule.waitForIdle()
+
+        // 书架列表异步刷新，等待书卡片出现
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("可读书").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("可读书").performClick()
+        composeRule.waitForIdle()
+
+        // 章节行可能在可视区下方，先滚动到可见再点击
+        composeRule.onNodeWithText("第一章").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        // 进入阅读页，翻章控件可见（导航为异步，等待其出现）
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("上一章").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("上一章").assertIsDisplayed()
+        composeRule.onNodeWithText("下一章").assertIsDisplayed()
     }
 }

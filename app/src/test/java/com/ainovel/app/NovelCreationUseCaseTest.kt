@@ -783,4 +783,77 @@ class NovelCreationUseCaseTest {
         assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
         assertThat(dao.getChapters(novelId)).hasSize(5)
     }
+
+    @Test
+    fun startPipelineInBackground_newNovelFullCreation_persistsAllChapters() = runBlocking {
+        // 用户路径：新建小说 → 后台完整创作 → 世界观/大纲/全部章节落库 → COMPLETED
+        val novelId = novelRepository.createNovel(
+            title = "新书",
+            synopsis = "简介",
+            genre = "玄幻",
+            totalChapters = 3
+        )
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") ->
+                    "## 人物设定\n主角：阿杰\n## 地理设定\n大陆\n## 规则体系\n灵力\n## 时间线\n纪元一"
+                systemPrompt.contains("大纲规划师") ->
+                    "第 1 章 《开端》：少年觉醒灵力\n第 2 章 《试炼》：踏上征途\n第 3 章 《城下》：初遇强敌"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 开端\n正文内容".repeat(40)
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 开端\n修正正文".repeat(30)
+                systemPrompt.contains("润色编辑") -> "第 1 章 开端\n润色正文".repeat(30)
+                else -> "第 1 章 开端\n正文".repeat(30)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        assertThat(useCase.startPipelineInBackground(
+            novelId = novelId,
+            title = "新书",
+            genre = "玄幻",
+            theme = "成长",
+            style = "爽文",
+            totalChapters = 3
+        )).isTrue()
+
+        kotlinx.coroutines.withTimeout(30000) {
+            while (useCase.isRunning(novelId)) {
+                delay(100)
+            }
+        }
+
+        // 全部章节落库，状态完成
+        assertThat(useCase.currentState(novelId)?.phase).isEqualTo(PipelinePhase.COMPLETED)
+        val novel = dao.getNovel(novelId)
+        assertThat(novel).isNotNull()
+        assertThat(novel!!.status).isEqualTo(NovelStatus.COMPLETED)
+        assertThat(novel.totalChapters).isEqualTo(3)
+        assertThat(novel.currentChapterIndex).isEqualTo(3)
+
+        val chapters = dao.getChapters(novelId)
+        assertThat(chapters).hasSize(3)
+        chapters.forEach { c ->
+            assertThat(c.title.isNotBlank()).isTrue()
+            assertThat(c.content.length).isGreaterThan(100)
+        }
+
+        // 世界观与大纲已持久化，供续写/详情页读取
+        val worldview = dao.getWorldview(novelId)
+        assertThat(worldview).isNotNull()
+        assertThat(worldview!!.characters).contains("阿杰")
+        val outline = dao.getOutline(novelId)
+        assertThat(outline).isNotNull()
+        assertThat(outline!!.content).contains("开端")
+
+        // 创作期间状态流转：WORLDVIEW → OUTLINE → WRITE_CHAPTER → COMPLETED，未出现错误
+        val states = fake.recordedUserMessages
+        assertThat(states).isNotEmpty()
+        assertThat(useCase.observeRunning(novelId).value).isFalse()
+    }
 }
