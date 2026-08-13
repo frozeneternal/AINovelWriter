@@ -218,4 +218,87 @@ class NovelAnalyzerTest {
         assertThat(persistence.plot).contains("少年成长")
         assertThat(persistence.style).contains("第三人称")
     }
+
+    @Test
+    fun analyze_longText_splitsIntoBatches_andMergesAllChapters() = runTest {
+        val persistence = FakePersistence()
+        val fake = FakeLlmGateway()
+        // 记录每次调用的 userMessage，验证长文被分批覆盖而非只取前几章
+        val characterPrompts = mutableListOf<String>()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("提取人物信息") -> {
+                    characterPrompts += userMessage
+                    val names = """角色\d+""".toRegex()
+                        .findAll(userMessage)
+                        .map { it.value }
+                        .distinct()
+                        .joinToString("\n") { "### $it\n- 身份：角色" }
+                    "## 人物设定\n$names"
+                }
+                systemPrompt.contains("提取世界观设定") ->
+                    "## 地理设定\n大陆\n## 规则体系\n灵力\n## 时间线\n纪元"
+                systemPrompt.contains("情节梗概") || systemPrompt.contains("写作技法") ->
+                    "## 情节梗概\n主线片段\n\n## 手法画像\n- 叙事视角：第三人称"
+                else -> ""
+            }
+        }
+        val analyzer = NovelAnalyzer(fake, persistence)
+        val session = AnalysisSession(1)
+
+        // 构造 20 章长文，远超单批预算（8 章/批）
+        val text = (1..20).joinToString("\n\n") { i ->
+            "第 $i 章 章节\n这是第 $i 章的人物：角色$i。\n" + "正文内容填充。".repeat(300)
+        }
+
+        val events = analyzer.analyze(
+            com.ainovel.app.domain.analysis.AnalysisRequest(1, text),
+            session
+        ).toList()
+
+        assertThat(events.any { it is AnalysisEvent.Completed }).isTrue()
+        // 长文被拆成多批，每批不超过 8 章
+        assertThat(characterPrompts.size).isGreaterThan(2)
+        // 所有章节内容都进入过某批（不丢后半本）
+        val allBatches = characterPrompts.joinToString("\n")
+        assertThat(allBatches).contains("第 1 章")
+        assertThat(allBatches).contains("第 20 章")
+        // 合并后的人物去重保留全部章节角色
+        assertThat(persistence.characters).contains("角色1")
+        assertThat(persistence.characters).contains("角色20")
+        // 世界观小节正确合并
+        assertThat(persistence.worldview).contains("地理设定")
+        assertThat(persistence.worldview).contains("规则体系")
+        assertThat(persistence.worldview).contains("时间线")
+        assertThat(persistence.plot).contains("主线")
+        assertThat(persistence.style).contains("第三人称")
+    }
+
+    @Test
+    fun analyze_longText_preservesSavedChapterCount() = runTest {
+        val persistence = FakePersistence()
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("提取人物信息") -> "## 人物设定\n### 阿杰"
+                systemPrompt.contains("提取世界观设定") -> "## 地理设定\n大陆"
+                systemPrompt.contains("情节梗概") || systemPrompt.contains("写作技法") ->
+                    "## 情节梗概\n主线\n\n## 手法画像\n- 叙事视角：第一人称"
+                else -> ""
+            }
+        }
+        val analyzer = NovelAnalyzer(fake, persistence)
+        val session = AnalysisSession(1)
+        val text = (1..30).joinToString("\n\n") { i ->
+            "第 $i 章 章节\n这是第 $i 章的正文内容。"
+        }
+
+        analyzer.analyze(
+            com.ainovel.app.domain.analysis.AnalysisRequest(1, text),
+            session
+        ).toList()
+
+        assertThat(persistence.savedChapters).hasSize(30)
+        assertThat(session.state.value.chapterCount).isEqualTo(30)
+    }
 }
