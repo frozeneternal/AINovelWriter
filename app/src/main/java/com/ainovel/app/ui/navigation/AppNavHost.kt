@@ -14,12 +14,14 @@ import com.ainovel.app.ui.creation.CreationSetupScreen
 import com.ainovel.app.ui.history.HistoryScreen
 import com.ainovel.app.ui.importing.ImportScreen
 import com.ainovel.app.ui.reading.ReaderScreen
+import com.ainovel.app.ui.recentlydeleted.RecentlyDeletedScreen
 import com.ainovel.app.ui.settings.SettingsScreen
 import com.ainovel.app.ui.worldview.WorldviewScreen
 
 object Routes {
     const val BOOKSHELF = "bookshelf"
     const val HISTORY = "history"
+    const val RECENTLY_DELETED = "recently_deleted"
     const val SETTINGS = "settings"
     const val CREATION_SETUP = "creation_setup"
     const val CREATION_RUN = "creation_run/{novelId}?continuation={continuation}&resume={resume}&direction={direction}&chapters={chapters}&wordCount={wordCount}"
@@ -59,6 +61,7 @@ fun AppNavHost() {
                 onNewNovel = { navController.navigate(Routes.CREATION_SETUP) },
                 onImportNovel = { navController.navigate(Routes.IMPORT) },
                 onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                onOpenRecentlyDeleted = { navController.navigate(Routes.RECENTLY_DELETED) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
@@ -91,6 +94,11 @@ fun AppNavHost() {
             HistoryScreen(
                 onBack = { navController.popBackStack() },
                 onOpenNovel = { id -> navController.navigate(Routes.bookDetail(id)) }
+            )
+        }
+        composable(Routes.RECENTLY_DELETED) {
+            RecentlyDeletedScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable(Routes.SETTINGS) {

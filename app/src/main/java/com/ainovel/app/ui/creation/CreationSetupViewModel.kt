@@ -89,6 +89,11 @@ class CreationSetupViewModel @Inject constructor(
                 genre = s.genre,
                 totalChapters = s.chapterCount
             )
+            novelRepository.saveCreationPrompt(
+                novelId = novelId,
+                direction = s.style.trim(),
+                wordCount = s.chapterWordCount
+            )
             _state.value = _state.value.copy(submitting = false)
             onCreated(novelId)
         }

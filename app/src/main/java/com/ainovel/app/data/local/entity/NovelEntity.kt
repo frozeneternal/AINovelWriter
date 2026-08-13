@@ -19,5 +19,8 @@ data class NovelEntity(
     val totalChapters: Int = 0,
     val source: NovelSource = NovelSource.ORIGINAL,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null,
+    val lastDirection: String = "",
+    val lastChapterWordCount: Int = 0
 )

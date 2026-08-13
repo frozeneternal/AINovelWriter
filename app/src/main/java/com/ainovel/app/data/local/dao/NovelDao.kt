@@ -21,6 +21,12 @@ interface NovelDao {
     @Query("SELECT * FROM novels ORDER BY updatedAt DESC")
     fun observeNovels(): Flow<List<NovelEntity>>
 
+    @Query("SELECT * FROM novels WHERE deletedAt IS NULL ORDER BY updatedAt DESC")
+    fun observeActiveNovels(): Flow<List<NovelEntity>>
+
+    @Query("SELECT * FROM novels WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeDeletedNovels(): Flow<List<NovelEntity>>
+
     @Query("SELECT * FROM novels WHERE id = :id")
     fun observeNovel(id: Long): Flow<NovelEntity?>
 
@@ -35,6 +41,30 @@ interface NovelDao {
 
     @Delete
     suspend fun deleteNovel(novel: NovelEntity)
+
+    @Query("DELETE FROM novels WHERE id = :novelId")
+    suspend fun deleteNovelById(novelId: Long)
+
+    @Query("DELETE FROM chapters WHERE novelId = :novelId")
+    suspend fun deleteChaptersByNovel(novelId: Long)
+
+    @Query("DELETE FROM worldviews WHERE novelId = :novelId")
+    suspend fun deleteWorldviewByNovel(novelId: Long)
+
+    @Query("DELETE FROM outlines WHERE novelId = :novelId")
+    suspend fun deleteOutlineByNovel(novelId: Long)
+
+    @Query("DELETE FROM imported_texts WHERE novelId = :novelId")
+    suspend fun deleteImportedTextByNovel(novelId: Long)
+
+    @Query("DELETE FROM chat_messages WHERE novelId = :novelId")
+    suspend fun deleteChatMessagesByNovel(novelId: Long)
+
+    @Query("DELETE FROM generated_assets WHERE novelId = :novelId")
+    suspend fun deleteAssetsByNovel(novelId: Long)
+
+    @Query("DELETE FROM history_records WHERE novelId = :novelId")
+    suspend fun deleteHistoryByNovel(novelId: Long)
 
     @Query("SELECT * FROM chapters WHERE novelId = :novelId ORDER BY indexInNovel ASC")
     fun observeChapters(novelId: Long): Flow<List<ChapterEntity>>

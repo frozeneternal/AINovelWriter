@@ -1,4 +1,4 @@
-package com.ainovel.app.ui.bookshelf
+package com.ainovel.app.ui.recentlydeleted
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,20 +12,26 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class BookshelfViewModel @Inject constructor(
+class RecentlyDeletedViewModel @Inject constructor(
     private val novelRepository: NovelRepository
 ) : ViewModel() {
 
-    val novels: StateFlow<List<NovelEntity>> = novelRepository.observeActiveNovels()
+    val novels: StateFlow<List<NovelEntity>> = novelRepository.observeDeletedNovels()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
 
-    fun deleteNovel(novelId: Long) {
+    fun restore(novelId: Long) {
         viewModelScope.launch {
-            novelRepository.softDeleteNovel(novelId)
+            novelRepository.restoreNovel(novelId)
+        }
+    }
+
+    fun purge(novelId: Long) {
+        viewModelScope.launch {
+            novelRepository.purgeNovel(novelId)
         }
     }
 }

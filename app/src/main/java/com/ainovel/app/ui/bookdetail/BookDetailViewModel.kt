@@ -70,6 +70,24 @@ class BookDetailViewModel @Inject constructor(
         creationUseCase.resume(novelId)
     }
 
+    fun saveCreationPrompt(direction: String, chapterWordCount: Int) {
+        if (novelId == 0L) return
+        viewModelScope.launch {
+            novelRepository.saveCreationPrompt(
+                novelId = novelId,
+                direction = direction,
+                wordCount = chapterWordCount
+            )
+        }
+    }
+
+    fun deleteChapter(chapterId: Long) {
+        if (novelId == 0L) return
+        viewModelScope.launch {
+            novelRepository.deleteChapterAndRenumber(chapterId)
+        }
+    }
+
     fun generateCover() {
         val novel = _uiState.value.novel ?: return
         val prompt = buildString {

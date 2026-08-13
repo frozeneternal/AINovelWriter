@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MenuBook
@@ -68,6 +69,7 @@ fun BookshelfScreen(
     onNewNovel: () -> Unit,
     onImportNovel: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenRecentlyDeleted: () -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: BookshelfViewModel = hiltViewModel()
 ) {
@@ -84,6 +86,9 @@ fun BookshelfScreen(
                 actions = {
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Filled.History, contentDescription = "历史记录")
+                    }
+                    IconButton(onClick = onOpenRecentlyDeleted) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = "最近删除")
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "设置")
@@ -165,7 +170,7 @@ fun BookshelfScreen(
         AlertDialog(
             onDismissRequest = { novelToDelete = null },
             title = { Text("删除书籍") },
-            text = { Text("确定要删除《${novel.title}》吗？该操作不可恢复。") },
+            text = { Text("确定要删除《${novel.title}》吗？书籍将移入最近删除，可随时恢复。") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteNovel(novel.id)

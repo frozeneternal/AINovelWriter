@@ -137,6 +137,67 @@ class NovelRepository @Inject constructor(
         dao.deleteNovel(novel)
     }
 
+    fun observeActiveNovels(): Flow<List<NovelEntity>> = dao.observeActiveNovels()
+    fun observeDeletedNovels(): Flow<List<NovelEntity>> = dao.observeDeletedNovels()
+
+    suspend fun softDeleteNovel(novelId: Long) {
+        dao.getNovel(novelId)?.let {
+            dao.updateNovel(it.copy(deletedAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    suspend fun restoreNovel(novelId: Long) {
+        dao.getNovel(novelId)?.let {
+            dao.updateNovel(it.copy(deletedAt = null, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    suspend fun purgeNovel(novelId: Long) {
+        dao.deleteChaptersByNovel(novelId)
+        dao.deleteWorldviewByNovel(novelId)
+        dao.deleteOutlineByNovel(novelId)
+        dao.deleteImportedTextByNovel(novelId)
+        dao.deleteChatMessagesByNovel(novelId)
+        dao.deleteAssetsByNovel(novelId)
+        dao.deleteHistoryByNovel(novelId)
+        dao.deleteNovelById(novelId)
+    }
+
+    suspend fun saveCreationPrompt(novelId: Long, direction: String, wordCount: Int) {
+        dao.getNovel(novelId)?.let {
+            dao.updateNovel(
+                it.copy(
+                    lastDirection = direction,
+                    lastChapterWordCount = wordCount,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    suspend fun deleteChapterAndRenumber(chapterId: Long) {
+        val chapter = dao.getChapter(chapterId) ?: return
+        val novelId = chapter.novelId
+        dao.deleteChapter(chapter)
+        val remaining = dao.getChapters(novelId).sortedBy { it.indexInNovel }
+        remaining.forEachIndexed { i, c ->
+            val newIndex = i + 1
+            if (c.indexInNovel != newIndex) {
+                dao.updateChapter(c.copy(indexInNovel = newIndex))
+            }
+        }
+        dao.getNovel(novelId)?.let { novel ->
+            dao.updateNovel(
+                novel.copy(
+                    totalChapters = remaining.size,
+                    currentChapterIndex = novel.currentChapterIndex.coerceIn(0, remaining.size),
+                    status = if (remaining.isEmpty()) NovelStatus.DRAFT else novel.status,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
     suspend fun upsertWorldview(novelId: Long, rawText: String) {
         val existing = dao.getWorldview(novelId)
         val (characters, geography, rules, timeline) = parseWorldview(rawText)

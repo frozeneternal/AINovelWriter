@@ -9,6 +9,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dagger.hilt.android.testing.HiltAndroidRule
@@ -145,5 +147,78 @@ class MainActivitySmokeTest {
         }
         composeRule.onNodeWithText("上一章").assertIsDisplayed()
         composeRule.onNodeWithText("下一章").assertIsDisplayed()
+    }
+
+    @Test
+    fun recentlyDeletedEntry_showsEmptyState() {
+        composeRule.onNodeWithContentDescription("最近删除").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("最近删除").assertIsDisplayed()
+        composeRule.onNodeWithText("最近删除为空").assertIsDisplayed()
+    }
+
+    @Test
+    fun deletedNovel_appearsInRecentlyDeleted_andRestores() {
+        runBlocking {
+            val id = novelRepository.importNovel("待删除书.txt", "第一章\n\n正文内容")
+            novelRepository.softDeleteNovel(id)
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithContentDescription("最近删除").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("待删除书").assertIsDisplayed()
+
+        composeRule.onNodeWithContentDescription("恢复").performClick()
+        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("最近删除为空").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun bookDetail_continuationDialog_prefillsLastPrompt() {
+        runBlocking {
+            val id = novelRepository.importNovel("回显书.txt", "第一章\n\n正文内容")
+            novelRepository.saveCreationPrompt(
+                novelId = id,
+                direction = "主角觉醒星火之力",
+                wordCount = 3000
+            )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("回显书").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("回显书").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("按原作手法续写").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("主角觉醒星火之力").assertIsDisplayed()
+    }
+
+    @Test
+    fun bookDetail_longPressChapter_showsDeleteDialog() {
+        runBlocking {
+            val id = novelRepository.importNovel("长按书.txt", "第一章\n\n正文内容")
+            novelRepository.saveImportedChapters(
+                id,
+                listOf(1 to ("第一章" to "这是第一章的正文内容，足够长以便阅读。"))
+            )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithText("长按书").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("长按书").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("第一章").performScrollTo().performTouchInput { longClick() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("删除章节").assertIsDisplayed()
     }
 }

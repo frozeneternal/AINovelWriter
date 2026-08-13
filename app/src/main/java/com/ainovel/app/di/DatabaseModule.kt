@@ -24,7 +24,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "ainovel.db"
-        ).addMigrations(Migration1To2()).build()
+        ).addMigrations(Migration1To2(), Migration2To3()).build()
     }
 
     @Provides
@@ -54,6 +54,20 @@ private class Migration1To2 : Migration(1, 2) {
         )
         db.execSQL(
             "ALTER TABLE worldviews ADD COLUMN styleProfile TEXT NOT NULL DEFAULT ''"
+        )
+    }
+}
+
+private class Migration2To3 : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE novels ADD COLUMN deletedAt INTEGER"
+        )
+        db.execSQL(
+            "ALTER TABLE novels ADD COLUMN lastDirection TEXT NOT NULL DEFAULT ''"
+        )
+        db.execSQL(
+            "ALTER TABLE novels ADD COLUMN lastChapterWordCount INTEGER NOT NULL DEFAULT 0"
         )
     }
 }

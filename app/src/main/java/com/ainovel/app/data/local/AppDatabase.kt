@@ -23,7 +23,7 @@ import com.ainovel.app.data.local.entity.WorldviewEntity
         ChatMessageEntity::class,
         ImportedTextEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

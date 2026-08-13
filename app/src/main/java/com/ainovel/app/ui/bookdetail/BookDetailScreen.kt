@@ -1,7 +1,8 @@
 package com.ainovel.app.ui.bookdetail
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,6 +88,7 @@ fun BookDetailScreen(
     var pendingIsContinuation by remember { mutableStateOf(false) }
     var continuationChapters by remember { mutableStateOf(5) }
     var wordCountInput by remember { mutableStateOf(0) }
+    var chapterToDelete by remember { mutableStateOf<ChapterEntity?>(null) }
 
     LaunchedEffect(novelId) {
         viewModel.init(novelId)
@@ -229,8 +231,8 @@ fun BookDetailScreen(
                             onClick = {
                                 pendingIsContinuation = true
                                 continuationChapters = 5
-                                wordCountInput = 0
-                                directionInput = ""
+                                wordCountInput = n.lastChapterWordCount
+                                directionInput = n.lastDirection
                                 showDirectionDialog = true
                             },
                             modifier = Modifier.weight(1f)
@@ -251,8 +253,8 @@ fun BookDetailScreen(
                         Button(
                             onClick = {
                                 pendingIsContinuation = false
-                                wordCountInput = 0
-                                directionInput = ""
+                                wordCountInput = n.lastChapterWordCount
+                                directionInput = n.lastDirection
                                 showDirectionDialog = true
                             },
                             modifier = Modifier.weight(1f)
@@ -326,7 +328,11 @@ fun BookDetailScreen(
                     )
                 } else {
                     uiState.chapters.forEach { chapter ->
-                        ChapterRow(chapter, onClick = { onOpenReader(chapter.indexInNovel) })
+                        ChapterRow(
+                            chapter = chapter,
+                            onClick = { onOpenReader(chapter.indexInNovel) },
+                            onLongClick = { chapterToDelete = chapter }
+                        )
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -386,6 +392,7 @@ fun BookDetailScreen(
                     onClick = {
                         showDirectionDialog = false
                         val direction = directionInput.trim()
+                        viewModel.saveCreationPrompt(direction, wordCountInput)
                         if (pendingIsContinuation) {
                             onStartContinuation(direction, continuationChapters, wordCountInput)
                         } else {
@@ -403,15 +410,35 @@ fun BookDetailScreen(
             }
         )
     }
+
+    chapterToDelete?.let { chapter ->
+        AlertDialog(
+            onDismissRequest = { chapterToDelete = null },
+            title = { Text("删除章节") },
+            text = { Text("确定删除「${chapter.title.ifBlank { "第 ${chapter.indexInNovel} 章" }}」吗？删除后剩余章节序号会自动重排。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteChapter(chapter.id)
+                    chapterToDelete = null
+                }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { chapterToDelete = null }) { Text("取消") }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChapterRow(chapter: ChapterEntity, onClick: () -> Unit) {
+private fun ChapterRow(chapter: ChapterEntity, onClick: () -> Unit, onLongClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        onClick = onClick
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
