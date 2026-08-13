@@ -156,3 +156,9 @@ Entries discovered by the Agent during task execution should follow this format:
   - 修复模式：在 ContentPolicyException.kt 加顶层函数 detectRefusalResponse(text)，识别 200 正文里的拒绝话术——强信号（模型元身份自述"作为AI/我是人工智能"、明确拒绝短语"无法生成/不能提供/无法涉足/不能创作"等）无条件命中；弱信号（道歉词+创作动词类否定如"无法生成"、或政策词"内容政策/合规/合乎规范"）仅在短文本(≤200字)时命中，避免误伤小说正文里角色的"抱歉，我不能去那里"式对话
   - AgentOrchestrator 全部 6 处 LLM 调用（世界观/续写大纲/大纲/章节作者/连续性/润色）都在 withContentComplianceRetry 的 block 内加 detectRefusalResponse 检查，命中即 throw ContentPolicyException，复用现有合规重试追加【内容合规要求】后重写
   - FakeLlmGateway 用 maybeReturnRefusal/refusalForSystemPrompt/refusalRemaining 模拟"200 返回拒绝话术"，与 contentPolicyFailForSystemPrompt 同模式；测试触发词注意：outline-planner 的 systemPrompt 第 43 行含"让章节作者有明确创作方向"，refusalForSystemPrompt 若写"章节作者"会误匹配大纲规划师，必须用"才华横溢的小说章节作者"这类唯一短语
+
+[User Instruction Summary]
+- Date: 2026-08-13
+- Context: 用户在确认 APK 是否封装时提出
+- Instructions:
+  - 每次代码更新完成后，都要跑 `/opt/gradle-8.9/bin/gradle :app:assembleDebug --no-daemon` 构建最新 APK（产物在 app/build/outputs/apk/debug/app-debug.apk），并把构建号自动递增产生的 app/version.properties 变更提交（chore: 构建版本号递增到 N）
