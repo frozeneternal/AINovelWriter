@@ -514,6 +514,92 @@ class AgentOrchestratorTest {
     }
 
     @Test
+    fun run_chapterAuthorReturnsRefusal_retriesWithComplianceHintAndSavesRealContent() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        // 章节作者第一次返回"拒绝生成"话术（HTTP 200，但正文是拒绝措辞），重试后成功
+        fake.refusalForSystemPrompt = "才华横溢的小说章节作者"
+        fake.refusalRemaining = 1
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val events = orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO
+            ),
+            session = session
+        ).toList()
+
+        // 拒绝话术被识别并触发重试，最终产出真实正文、管线完成
+        assertThat(events.any { it is PipelineEvent.Completed }).isTrue()
+        assertThat(events.any { it is PipelineEvent.Error }).isFalse()
+        assertThat(session.state.value.phase).isEqualTo(PipelinePhase.COMPLETED)
+        assertThat(fake.refusalRemaining).isEqualTo(0)
+        // 重试时的用户消息应包含合规要求指令
+        assertThat(fake.recordedUserMessages.any { it.contains("【内容合规要求】") }).isTrue()
+        // 保存的章节正文是真实内容而非拒绝话术（管线最终由润色产出正文）
+        val generated = events.filterIsInstance<PipelineEvent.ChapterGenerated>()
+        assertThat(generated).hasSize(1)
+        assertThat(generated[0].content).contains("润色正文")
+        assertThat(generated[0].content).doesNotContain("无法涉足")
+    }
+
+    @Test
+    fun run_polishReturnsRefusal_retriesAndFallsBackToCorrectedText() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        // 润色编辑第一次返回拒绝话术，重试后成功
+        fake.refusalForSystemPrompt = "润色编辑"
+        fake.refusalRemaining = 1
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val events = orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO
+            ),
+            session = session
+        ).toList()
+
+        assertThat(events.any { it is PipelineEvent.Completed }).isTrue()
+        assertThat(events.any { it is PipelineEvent.Error }).isFalse()
+        assertThat(fake.refusalRemaining).isEqualTo(0)
+        // 润色的拒绝话术被识别并重试，最终保存润色后的真实正文
+        val generated = events.filterIsInstance<PipelineEvent.ChapterGenerated>()
+        assertThat(generated).hasSize(1)
+        assertThat(generated[0].content).contains("润色正文")
+        assertThat(generated[0].content).doesNotContain("无法涉足")
+    }
+
+    @Test
     fun run_contentPolicyViolationWorldview_retriesAndCompletes() = runTest {
         val fake = FakeLlmGateway()
         fake.completeHandler = { systemPrompt, userMessage, _, _ ->

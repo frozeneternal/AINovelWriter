@@ -146,3 +146,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - **读取阶段取消的关键陷阱**：awaitResponse 只覆盖等待响应阶段，响应到达后进入阻塞式 `readUtf8Line`/`body.string` 读取，此时取消仍不生效。直接在 `suspendCancellableCoroutine` 的 block 内同步执行阻塞读（如 `source.readUtf8Line()`）是无效的——协程没有真正挂起，job.cancel() 后 `invokeOnCancellation` 回调根本不触发（用 `invokeOnCompletion` 也一样，Job 停在 Cancelling 态不进入完成态）。正确模式：`cont.invokeOnCancellation { call.cancel() }` 注册回调后，把阻塞读 `Dispatchers.IO.dispatch(Dispatchers.IO) { block() }` 提交到 IO 线程执行、continuation 立即挂起，取消瞬间回调同步触发 `call.cancel()` 中断阻塞读，读到的 IOException（Socket closed）检查 `cont.isCancelled` 后转回 `CancellationException` 防止误判失败。流式循环不要用 `while (!source.exhausted())` 当条件——`exhausted()` 本身是阻塞读，body 未到时阻塞在条件处取消无法注入；改为 `while (true) { val line = runBlockingWithCall(call) { source.readUtf8Line() } ?: break }`
   - 测试注意：runTest 的虚拟时钟与真实 `Thread.sleep`/网络阻塞混用会导致 withTimeout 在虚拟时间下永远等不到真实线程完成而超时。Fake 用 Thread.sleep 模拟耗时 + 轮询 flag 的测试必须用 `runBlocking`（真实调度）+ `launch(Dispatchers.Default)`；MockWebServer 模拟永不返回的请求用 `SocketPolicy.NO_RESPONSE`；模拟"响应头已到但 body 阻塞"的读取阶段取消用 `setBodyDelay(长延时, MILLISECONDS)`（setHeadersDelay 会让 shutdown() 在 tearDown 报 "Gave up waiting for queue to shut down"，body 延迟过长同样会因 shutdown 5 秒超时抛该异常，测试 tearDown 需用 `runCatching { server.shutdown() }` 容忍）
   - 取消传播链路：job.cancel() → 协程在下个挂起点抛 CancellationException → 若被 catch(Exception) 吞则失效；正确做法是 rethrow 或让挂起点（awaitResume 的 delay、flow 的 emit、OkHttp 回调）自然传播取消
+
+[Project Knowledge Summary]
+- Date: 2026-08-13
+- Context: Discovered by Agent while fixing "模型返回拒绝话术被当正文保存" (chapter shows refusal text)
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 违禁词有两条触发路径：① HTTP 错误响应里带 content_policy 等 code（LlmClient.buildError 识别并抛 ContentPolicyException，已有处理）；② 模型返回 HTTP 200 但正文是"拒绝生成"话术（如"抱歉，我无法涉足这番构想，也无法生成此类内容……"），这种会被直接当正文保存显示给用户，之前的检测不覆盖
+  - 修复模式：在 ContentPolicyException.kt 加顶层函数 detectRefusalResponse(text)，识别 200 正文里的拒绝话术——强信号（模型元身份自述"作为AI/我是人工智能"、明确拒绝短语"无法生成/不能提供/无法涉足/不能创作"等）无条件命中；弱信号（道歉词+创作动词类否定如"无法生成"、或政策词"内容政策/合规/合乎规范"）仅在短文本(≤200字)时命中，避免误伤小说正文里角色的"抱歉，我不能去那里"式对话
+  - AgentOrchestrator 全部 6 处 LLM 调用（世界观/续写大纲/大纲/章节作者/连续性/润色）都在 withContentComplianceRetry 的 block 内加 detectRefusalResponse 检查，命中即 throw ContentPolicyException，复用现有合规重试追加【内容合规要求】后重写
+  - FakeLlmGateway 用 maybeReturnRefusal/refusalForSystemPrompt/refusalRemaining 模拟"200 返回拒绝话术"，与 contentPolicyFailForSystemPrompt 同模式；测试触发词注意：outline-planner 的 systemPrompt 第 43 行含"让章节作者有明确创作方向"，refusalForSystemPrompt 若写"章节作者"会误匹配大纲规划师，必须用"才华横溢的小说章节作者"这类唯一短语

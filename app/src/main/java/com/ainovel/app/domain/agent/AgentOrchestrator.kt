@@ -157,12 +157,14 @@ class AgentOrchestrator(
 """,
                         userMessage = "书名：《${request.novelTitle}》\n续写方向：${request.continuationDirection.ifBlank { "按原作者风格与情节走向续写" }}\n\n【前文最近章节结尾】\n$recentContext"
                     ) { sys, user ->
-                        llm.complete(
+                        val out = llm.complete(
                             systemPrompt = sys,
                             userMessage = user,
                             temperature = PromptTemplates.agent("outline-planner").temperature,
                             maxTokens = PromptTemplates.agent("outline-planner").maxTokens
                         )
+                        detectRefusalResponse(out)?.let { throw ContentPolicyException(it) }
+                        out
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
@@ -192,12 +194,14 @@ class AgentOrchestrator(
                         style = request.style
                     ).content
                 ) { sys, user ->
-                    llm.complete(
+                    val out = llm.complete(
                         systemPrompt = sys,
                         userMessage = user,
                         temperature = PromptTemplates.agent("worldview-architect").temperature,
                         maxTokens = PromptTemplates.agent("worldview-architect").maxTokens
                     )
+                    detectRefusalResponse(out)?.let { throw ContentPolicyException(it) }
+                    out
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -225,12 +229,14 @@ class AgentOrchestrator(
                     systemPrompt = PromptTemplates.agent("outline-planner").systemPrompt,
                     userMessage = "书名：《${request.novelTitle}》\n题材：${request.genre}\n预计章节数：${request.totalChapters}\n\n【世界观设定】\n${worldview.take(6000)}"
                 ) { sys, user ->
-                    llm.complete(
+                    val out = llm.complete(
                         systemPrompt = sys,
                         userMessage = user,
                         temperature = PromptTemplates.agent("outline-planner").temperature,
                         maxTokens = PromptTemplates.agent("outline-planner").maxTokens
                     )
+                    detectRefusalResponse(out)?.let { throw ContentPolicyException(it) }
+                    out
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -328,6 +334,7 @@ class AgentOrchestrator(
                         session.update { it.copy(streamingText = sb.toString()) }
                         emit(PipelineEvent.Token(chunk))
                     }
+                    detectRefusalResponse(sb.toString())?.let { throw ContentPolicyException(it) }
                     sb.toString()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -377,12 +384,14 @@ class AgentOrchestrator(
                         append("\n\n【本章正文】\n").append(rawChapter)
                     }
                 ) { sys, user ->
-                    llm.complete(
+                    val out = llm.complete(
                         systemPrompt = sys,
                         userMessage = user,
                         temperature = PromptTemplates.agent("continuity-editor").temperature,
                         maxTokens = PromptTemplates.agent("continuity-editor").maxTokens
                     )
+                    detectRefusalResponse(out)?.let { throw ContentPolicyException(it) }
+                    out
                 }
                 parseContinuityOutput(verified, rawChapter)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -421,6 +430,7 @@ class AgentOrchestrator(
                         emit(PipelineEvent.Token(chunk))
                     }
                     session.update { it.copy(streamingText = "") }
+                    detectRefusalResponse(sb.toString())?.let { throw ContentPolicyException(it) }
                     sb.toString()
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
