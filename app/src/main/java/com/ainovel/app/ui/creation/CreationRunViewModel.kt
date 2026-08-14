@@ -56,7 +56,7 @@ class CreationRunViewModel @Inject constructor(
         // 该书被用户主动停止过，且本次进入是自动恢复场景（resume=true）：
         // 保持"已停止生成"状态，不自动重启管线；resume=false 表示用户显式发起新的创作/续写
         if (resume && creationUseCase.isStopped(id)) {
-            _state.value = _state.value.copy(phase = PipelinePhase.CANCELLED, message = "已停止生成")
+            markCancelled()
             return
         }
 
@@ -128,7 +128,12 @@ class CreationRunViewModel @Inject constructor(
         eventsJob?.cancel()
         eventsJob = null
         creationUseCase.cancel(novelId)
-        _state.value = _state.value.copy(phase = PipelinePhase.CANCELLED, message = "已停止")
+        markCancelled()
+    }
+
+    private fun markCancelled() {
+        _state.value = _state.value.copy(phase = PipelinePhase.CANCELLED, message = "已停止生成")
+        _phaseLabel.value = "已停止生成"
     }
 
     fun confirm() {

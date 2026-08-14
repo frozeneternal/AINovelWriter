@@ -128,6 +128,8 @@ class CreationRunViewModelTest {
         val viewModel = CreationRunViewModel(novelRepository, useCase)
         viewModel.startIfNeeded(id = novelId, resume = true)
         assertThat(viewModel.state.value.phase).isEqualTo(PipelinePhase.CANCELLED)
+        // 顶部标题必须同步切到"已停止生成"，避免停留在停止前的世界观/大纲阶段标签
+        assertThat(viewModel.phaseLabel.value).isEqualTo("已停止生成")
         assertThat(useCase.isRunning(novelId)).isFalse()
         // 稍等片刻确认管线确实没有自动重启
         delay(300)
