@@ -40,6 +40,7 @@ class NovelCreationUseCase @Inject constructor(
     private val runningStates = mutableMapOf<Long, MutableStateFlow<Boolean>>()
     private val pausedStates = mutableMapOf<Long, MutableStateFlow<Boolean>>()
     private val continuationFlags = mutableMapOf<Long, Boolean>()
+    private val stoppedNovels = mutableSetOf<Long>()
 
     fun getSession(novelId: Long): CreationSession? = sessions[novelId]
 
@@ -103,6 +104,7 @@ class NovelCreationUseCase @Inject constructor(
             return false
         }
         continuationFlags[novelId] = false
+        stoppedNovels.remove(novelId)
         val job = scope.launch {
             runPipeline(
                 novelId = novelId,
@@ -137,6 +139,7 @@ class NovelCreationUseCase @Inject constructor(
         if (totalNewChapters <= 0) return false
         if (isRunning(novelId)) return false
         continuationFlags[novelId] = true
+        stoppedNovels.remove(novelId)
         val job = scope.launch {
             runContinuation(
                 novelId = novelId,
@@ -316,9 +319,17 @@ class NovelCreationUseCase @Inject constructor(
         sessions.remove(novelId)
         // 停止续写后清除续写标志，防止重新进入页面时自动重启续写管线
         continuationFlags.remove(novelId)
+        // 记录该书已被用户主动停止，重新进入页面时保持"已停止生成"状态而非自动重启
+        stoppedNovels.add(novelId)
         setRunning(novelId, false)
         setPaused(novelId, false)
     }
+
+    /**
+     * 该书是否被用户主动停止过（用于重新进入页面时避免自动重启管线）。
+     * 用户显式发起新的创作/续写时由启动方法清除该标记。
+     */
+    fun isStopped(novelId: Long): Boolean = stoppedNovels.contains(novelId)
 
     /**
      * 导入小说的续写入口：读取解析档案（人物/世界观/梗概/手法画像），

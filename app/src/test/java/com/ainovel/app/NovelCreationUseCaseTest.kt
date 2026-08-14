@@ -732,9 +732,12 @@ class NovelCreationUseCaseTest {
         assertThat(useCase.isRunning(novelId)).isFalse()
         // 关键：停止后清除续写标志，重新进入页面（resume=true）不会自动重启续写管线
         assertThat(useCase.isContinuationMode(novelId)).isFalse()
+        // 停止后记录 stopped 标记，重新进入页面保持"已停止生成"而非自动重启
+        assertThat(useCase.isStopped(novelId)).isTrue()
 
-        // 停止后再次启动续写仍可正常工作（新的一次续写）
+        // 停止后再次启动续写仍可正常工作（新的一次续写），并清除 stopped 标记
         assertThat(useCase.startContinuationInBackground(novelId, totalNewChapters = 1)).isTrue()
+        assertThat(useCase.isStopped(novelId)).isFalse()
         kotlinx.coroutines.withTimeout(15000) {
             while (useCase.isRunning(novelId)) delay(100)
         }

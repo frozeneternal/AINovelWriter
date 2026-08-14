@@ -53,6 +53,13 @@ class CreationRunViewModel @Inject constructor(
         // 后台管线已在运行：只恢复订阅，不重复启动
         if (creationUseCase.isRunning(id)) return
 
+        // 该书被用户主动停止过，且本次进入是自动恢复场景（resume=true）：
+        // 保持"已停止生成"状态，不自动重启管线；resume=false 表示用户显式发起新的创作/续写
+        if (resume && creationUseCase.isStopped(id)) {
+            _state.value = _state.value.copy(phase = PipelinePhase.CANCELLED, message = "已停止生成")
+            return
+        }
+
         viewModelScope.launch {
             // 明确意图优先：resume=false 时以用户选择的续写/创作为准，
             // 避免 useCase 遗留的续写标志把"重新创作"误判为续写
