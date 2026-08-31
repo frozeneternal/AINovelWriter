@@ -8,6 +8,8 @@ import com.ainovel.app.domain.agent.PipelineEvent
 import com.ainovel.app.domain.agent.PipelinePhase
 import com.ainovel.app.domain.agent.PipelineRequest
 import com.ainovel.app.domain.agent.PipelineState
+import com.ainovel.app.domain.agent.PreviousChapter
+import com.ainovel.app.domain.analysis.ChapterSplitter
 import com.ainovel.app.domain.model.CreationMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +107,14 @@ class NovelCreationUseCase @Inject constructor(
         }
         continuationFlags[novelId] = false
         stoppedNovels.remove(novelId)
+        // 注入已落库的章节作为前文，保证"续写/继续创作"时模型能承接既有剧情与文风，
+        // 避免脱离前文凭空原创新故事。
+        val existingChapters = novelRepository.getChapters(novelId).map {
+            PreviousChapter(
+                title = it.title.ifBlank { "第 ${it.indexInNovel} 章" },
+                content = it.content
+            )
+        }
         val job = scope.launch {
             runPipeline(
                 novelId = novelId,
@@ -116,7 +126,8 @@ class NovelCreationUseCase @Inject constructor(
                 mode = CreationMode.AUTO,
                 startChapterIndex = startChapterIndex,
                 continuationDirection = continuationDirection,
-                chapterWordCount = chapterWordCount
+                chapterWordCount = chapterWordCount,
+                existingChapters = existingChapters
             ).collect { event ->
                 eventFlows[novelId]?.tryEmit(event)
             }
@@ -189,7 +200,8 @@ class NovelCreationUseCase @Inject constructor(
         mode: CreationMode,
         startChapterIndex: Int = 1,
         continuationDirection: String = "",
-        chapterWordCount: Int = 0
+        chapterWordCount: Int = 0,
+        existingChapters: List<PreviousChapter> = emptyList()
     ): Flow<PipelineEvent> {
         val session = CreationSession(novelId, mode)
         sessions[novelId] = session
@@ -205,7 +217,8 @@ class NovelCreationUseCase @Inject constructor(
                 mode = mode,
                 startChapterIndex = startChapterIndex,
                 continuationDirection = continuationDirection,
-                chapterWordCount = chapterWordCount
+                chapterWordCount = chapterWordCount,
+                existingChapters = existingChapters
             ),
             session = session
         ).onStart { markWriting(novelId) }.onEach { event ->
@@ -345,7 +358,21 @@ class NovelCreationUseCase @Inject constructor(
         require(totalNewChapters > 0) { "续写章节数必须大于 0" }
         val novel = novelRepository.getNovel(novelId) ?: error("书籍不存在")
         val worldview = novelRepository.getWorldview(novelId)
-        val storedChapters = novelRepository.getChapters(novelId)
+        // 章节切分只在解析档案时落库；若用户导入后尚未解析（跳过/中断/解析失败），
+        // 直接从原文切分章节作为续写前文，避免模型无原文依据、凭空原创一篇新小说。
+        var storedChapters = novelRepository.getChapters(novelId)
+        if (storedChapters.isEmpty()) {
+            val importedText = novelRepository.getImportedText(novelId)?.fullText.orEmpty()
+            val split = ChapterSplitter.split(importedText)
+            if (split.isNotEmpty()) {
+                novelRepository.saveImportedChapters(
+                    novelId,
+                    split.mapIndexed { i, c -> (i + 1) to (c.title to c.content) }
+                )
+                storedChapters = novelRepository.getChapters(novelId)
+            }
+        }
+        require(storedChapters.isNotEmpty()) { "未找到可续写的原文章节，请先在解析档案中完成解析" }
         val startIndex = storedChapters.size + 1
 
         val styleProfile = worldview?.styleProfile?.takeIf { it.isNotBlank() }

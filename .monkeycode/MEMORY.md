@@ -36,7 +36,7 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while validating domain layer with standalone kotlinc (no Android SDK in devbox)
 - Category: Build Methods
 - Instructions:
-  - 本机无 Android SDK，无法跑 ./gradlew 完整构建；改用 /tmp/ktverify 下的 kotlinc 2.0.21 做命令行编译验证
+  - 本机无 Android SDK，无法跑 ./gradlew 完整构建；改用 /tmp/ktverify 下的 kotlinc 2.0.21 做命令行编译验证（2026-08-31 起环境已自建完整工具链，直接跑系统 gradle，见文末构建环境记录，本条仅作历史参考）
   - 验证命令必须用 `-Xplugin=kotlinc/lib/kotlinx-serialization-compiler-plugin.jar` 加载序列化插件，用 `-classpath` 指向下载的 jar 目录，不能同时放入两个 kotlinx-coroutines jar（如 -jvm 与 multiplatform 版），否则 Flow/serialization 出现"unresolved reference 'kotlinx'"类环境性误报
   - kotlinx-serialization-core/json、kotlinx-coroutines-core、junit、truth、okhttp、okio、mockwebserver、coroutines-test、atomicfu 已下载到 /tmp/ktverify/lib；测试用 `java -cp out:... org.junit.runner.JUnitCore <TestClass>` 运行
   - 单元测试注意：Truth 1.4.4 的 IterableSubject 没有 anyMatch，用 `assertThat(list.any {...}).isTrue()`；byte[] 比较用 `map { it.toInt() }` 再 containsExactly
@@ -162,3 +162,13 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: 用户在确认 APK 是否封装时提出
 - Instructions:
   - 每次代码更新完成后，都要跑 `/opt/gradle-8.9/bin/gradle :app:assembleDebug --no-daemon` 构建最新 APK（产物在 app/build/outputs/apk/debug/app-debug.apk），并把构建号自动递增产生的 app/version.properties 变更提交（chore: 构建版本号递增到 N）
+
+[Project Knowledge Summary]
+- Date: 2026-08-30
+- Context: Discovered by Agent while fixing "续写时突然原创一篇小说而不是按原作者手法续写"
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 续写凭空原创的两条根因：① runContinuation（导入小说"按原作手法续写"）依赖解析档案时切分落库的章节作为前文，用户导入后未解析（跳过/中断/解析失败）时 storedChapters 为空、startIndex=1，模型无原文依据直接从第 1 章凭空创作；② runPipeline（普通小说"续写/创作"）构造 PipelineRequest 从不注入 existingChapters，对已有章节的小说继续创作时模型看不到前文，剧情与文风断档
+  - 修复模式：runContinuation 在 storedChapters 为空时先用 ChapterSplitter 从 importedText 切分章节并 saveImportedChapters 落库再续写（切分仍为空则 require 抛错提示先解析档案）；startPipelineInBackground 启动前读 getChapters 构造 PreviousChapter 列表传入 runPipeline 新增的 existingChapters 参数（全新创作传空列表行为不变）
+  - 环境记忆：importNovel 只存 imported_texts 与 novel，章节切分只在 NovelAnalyzer 解析（SPLIT_CHAPTERS）时落库；getChapters 按 indexInNovel ASC 排序保证前文顺序
+  - 构建环境（2026-08-31 会话自建，替代早前"无工具链"的过时记录）：本机已装 openjdk-17（/usr/bin/java）与 Gradle 8.9（/opt/gradle-8.9/gradle-8.9/bin/gradle），Android SDK 在 /opt/android-sdk（cmdline-tools/latest），项目 local.properties 写 sdk.dir=/opt/android-sdk；wrapper 脚本缺失，直接调系统 gradle，跑测试用 `cd /workspace && /opt/gradle-8.9/gradle-8.9/bin/gradle :app:testDebugUnitTest --no-daemon`（或按用户 2026-08-13 指令 `:app:assembleDebug` 出 APK 到 app/build/outputs/apk/debug/app-debug.apk）；构建需 4-5 分钟、内存峰值约 2.5GiB，后台跑

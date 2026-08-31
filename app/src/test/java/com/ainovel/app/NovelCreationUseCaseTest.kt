@@ -859,4 +859,121 @@ class NovelCreationUseCaseTest {
         assertThat(states).isNotEmpty()
         assertThat(useCase.observeRunning(novelId).value).isFalse()
     }
+
+    @Test
+    fun runContinuation_splitsImportedTextWhenNoChaptersYet() = runBlocking {
+        // 用户导入小说后未解析（无章节、无手法画像）直接续写：
+        // 应自动从原文切分章节作为前文，避免模型无原文依据凭空原创一篇新小说
+        val novelId = novelRepository.importNovel(
+            "未解析书.txt",
+            "第一章 起点\n故事从这里开始。\n\n他踏上旅途。" + "正文".repeat(600)
+        )
+        val fake = FakeLlmGateway()
+        val chapterPrompts = mutableListOf<String>()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
+                    chapterPrompts += userMessage
+                    "第 2 章 续写\n正文".repeat(30)
+                }
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 2 章 续写\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 2 章 续写\n润色正文".repeat(20)
+                else -> "第 2 章 续写\n正文".repeat(20)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        useCase.runContinuation(
+            novelId = novelId,
+            totalNewChapters = 1,
+            mode = CreationMode.AUTO
+        ).toList()
+
+        // 原文已被切分落库，续写章节紧随其后
+        val chapters = dao.getChapters(novelId)
+        assertThat(chapters).hasSize(2)
+        assertThat(chapters.map { it.indexInNovel }).containsExactly(1, 2)
+        // 前文注入到章节作者 prompt，模型能承接原剧情与文风
+        assertThat(chapterPrompts).isNotEmpty()
+        assertThat(chapterPrompts.first()).contains("故事从这里开始")
+    }
+
+    @Test
+    fun startPipelineInBackground_injectsExistingChaptersAsContext() = runBlocking {
+        // 已有 3 章的连载小说继续创作：已有章节应作为前文注入章节作者 prompt，
+        // 保证续写承接既有剧情，而不是脱离前文凭空原创新故事
+        val novelId = runBlocking {
+            val now = System.currentTimeMillis()
+            val id = dao.insertNovel(
+                NovelEntity(
+                    title = "连载书",
+                    synopsis = "梗概",
+                    genre = "玄幻",
+                    status = NovelStatus.WRITING,
+                    currentChapterIndex = 3,
+                    totalChapters = 10,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+            for (i in 1..3) {
+                dao.insertChapter(
+                    ChapterEntity(
+                        novelId = id,
+                        indexInNovel = i,
+                        title = "第 $i 章",
+                        content = "第 $i 章特有剧情内容".repeat(20),
+                        status = com.ainovel.app.domain.model.ChapterStatus.FINAL
+                    )
+                )
+            }
+            id
+        }
+        val fake = FakeLlmGateway()
+        val chapterPrompts = mutableListOf<String>()
+        fake.completeHandler = { systemPrompt, userMessage, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") ->
+                    "## 人物设定\n主角：阿杰\n## 地理设定\n大陆\n## 规则体系\n灵力\n## 时间线\n纪元一"
+                systemPrompt.contains("大纲规划师") ->
+                    "第 4 章 《续章》：推进剧情\n第 5 章 《转折》：冲突升级"
+                systemPrompt.contains("才华横溢的小说章节作者") -> {
+                    chapterPrompts += userMessage
+                    "第 4 章 续章\n正文".repeat(30)
+                }
+                systemPrompt.contains("连续性编辑") ->
+                    "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 4 章 续章\n修正正文".repeat(20)
+                systemPrompt.contains("润色编辑") -> "第 4 章 续章\n润色正文".repeat(20)
+                else -> "第 4 章 续章\n正文".repeat(20)
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            historyRepository
+        )
+
+        assertThat(useCase.startPipelineInBackground(
+            novelId = novelId,
+            title = "连载书",
+            genre = "玄幻",
+            theme = "成长",
+            style = "爽文",
+            totalChapters = 10,
+            startChapterIndex = 4
+        )).isTrue()
+
+        kotlinx.coroutines.withTimeout(30000) {
+            while (useCase.isRunning(novelId)) delay(100)
+        }
+
+        // 已有章节作为前文注入章节作者 prompt
+        assertThat(chapterPrompts).isNotEmpty()
+        assertThat(chapterPrompts.first()).contains("第 1 章特有剧情内容")
+    }
 }
