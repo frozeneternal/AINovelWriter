@@ -6,6 +6,8 @@ import com.ainovel.app.data.local.entity.ChapterEntity
 import com.ainovel.app.data.local.entity.NovelEntity
 import com.ainovel.app.data.repository.AssetRepository
 import com.ainovel.app.data.repository.NovelRepository
+import com.ainovel.app.domain.agent.DirectionSuggester
+import com.ainovel.app.domain.agent.DirectionSources
 import com.ainovel.app.domain.usecase.NovelCreationUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,14 +23,18 @@ data class BookDetailUiState(
     val generatingVideo: Boolean = false,
     val snackbarMessage: String? = null,
     val creationRunning: Boolean = false,
-    val creationPaused: Boolean = false
+    val creationPaused: Boolean = false,
+    val directionSources: DirectionSources = DirectionSources(),
+    val directionSuggestions: List<String> = emptyList(),
+    val suggestingDirections: Boolean = false
 )
 
 @HiltViewModel
 class BookDetailViewModel @Inject constructor(
     private val novelRepository: NovelRepository,
     private val assetRepository: AssetRepository,
-    private val creationUseCase: NovelCreationUseCase
+    private val creationUseCase: NovelCreationUseCase,
+    private val directionSuggester: DirectionSuggester
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookDetailUiState())
@@ -79,6 +85,46 @@ class BookDetailViewModel @Inject constructor(
                 wordCount = chapterWordCount
             )
         }
+    }
+
+    /**
+     * 基于小说既有材料调用 LLM 生成若干续写/创作方向建议，供用户在设置页选择。
+     */
+    fun loadDirectionSuggestions(isContinuation: Boolean) {
+        if (novelId == 0L || _uiState.value.suggestingDirections) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(suggestingDirections = true)
+            try {
+                val suggestions = directionSuggester.suggest(
+                    novelId,
+                    isContinuation,
+                    _uiState.value.directionSources
+                )
+                _uiState.value = _uiState.value.copy(
+                    suggestingDirections = false,
+                    directionSuggestions = suggestions
+                )
+                if (suggestions.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        snackbarMessage = "未能生成方向建议，请检查模型配置后重试"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    suggestingDirections = false,
+                    snackbarMessage = e.message ?: "方向推荐失败"
+                )
+            }
+        }
+    }
+
+    /**
+     * 更新参与方向生成的素材来源配置（勾选材料与补充要求）。
+     */
+    fun updateDirectionSources(transform: (DirectionSources) -> DirectionSources) {
+        _uiState.value = _uiState.value.copy(
+            directionSources = transform(_uiState.value.directionSources)
+        )
     }
 
     fun deleteChapter(chapterId: Long) {
