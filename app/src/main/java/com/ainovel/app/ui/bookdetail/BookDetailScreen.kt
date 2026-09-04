@@ -49,9 +49,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,8 +94,9 @@ fun BookDetailScreen(
     var wordCountInput by remember { mutableStateOf(0) }
     var suggestDirectionsEnabled by remember { mutableStateOf(false) }
     var chapterToDelete by remember { mutableStateOf<ChapterEntity?>(null) }
-    val editableDirections = remember(uiState.directionSuggestions) {
-        uiState.directionSuggestions.map { it }.toMutableList()
+    var suggestionGeneration by remember { mutableIntStateOf(0) }
+    val editableDirections = remember(uiState.directionSuggestions, suggestionGeneration) {
+        uiState.directionSuggestions.toMutableStateList()
     }
 
     LaunchedEffect(novelId) {
@@ -443,7 +446,7 @@ fun BookDetailScreen(
                         Spacer(Modifier.height(8.dp))
                         TextButton(
                             onClick = {
-                                editableDirections.clear()
+                                suggestionGeneration++
                                 viewModel.loadDirectionSuggestions(pendingIsContinuation)
                             },
                             modifier = Modifier.align(Alignment.End)
@@ -464,21 +467,17 @@ fun BookDetailScreen(
                                 }
                             }
                             uiState.directionSuggestions.isNotEmpty() -> {
-                                uiState.directionSuggestions.forEachIndexed { index, _ ->
-                                    val current = editableDirections.getOrNull(index) ?: ""
+                                uiState.directionSuggestions.forEachIndexed { index, original ->
+                                    val current = editableDirections.getOrNull(index) ?: original
                                     OutlinedTextField(
                                         value = current,
                                         onValueChange = { newValue ->
                                             if (index < editableDirections.size) {
                                                 editableDirections[index] = newValue
                                             }
+                                            directionInput = newValue
                                         },
                                         label = { Text("方向 ${index + 1}") },
-                                        trailingIcon = {
-                                            TextButton(onClick = { directionInput = current }) {
-                                                Text("选择")
-                                            }
-                                        },
                                         modifier = Modifier.fillMaxWidth(),
                                         minLines = 2,
                                         maxLines = 4

@@ -172,3 +172,9 @@ Entries discovered by the Agent during task execution should follow this format:
   - 修复模式：runContinuation 在 storedChapters 为空时先用 ChapterSplitter 从 importedText 切分章节并 saveImportedChapters 落库再续写（切分仍为空则 require 抛错提示先解析档案）；startPipelineInBackground 启动前读 getChapters 构造 PreviousChapter 列表传入 runPipeline 新增的 existingChapters 参数（全新创作传空列表行为不变）
   - 环境记忆：importNovel 只存 imported_texts 与 novel，章节切分只在 NovelAnalyzer 解析（SPLIT_CHAPTERS）时落库；getChapters 按 indexInNovel ASC 排序保证前文顺序
   - 构建环境（2026-08-31 会话自建，替代早前"无工具链"的过时记录）：本机已装 openjdk-17（/usr/bin/java）与 Gradle 8.9（/opt/gradle-8.9/gradle-8.9/bin/gradle），Android SDK 在 /opt/android-sdk（cmdline-tools/latest），项目 local.properties 写 sdk.dir=/opt/android-sdk；wrapper 脚本缺失，直接调系统 gradle，跑测试用 `cd /workspace && /opt/gradle-8.9/gradle-8.9/bin/gradle :app:testDebugUnitTest --no-daemon`（或按用户 2026-08-13 指令 `:app:assembleDebug` 出 APK 到 app/build/outputs/apk/debug/app-debug.apk）；构建需 4-5 分钟、内存峰值约 2.5GiB，后台跑
+
+[User Instruction Summary]
+- Date: 2026-09-04
+- Context: 用户在"检查方向推荐功能并修复后，是否提交"的询问下提出
+- Instructions:
+  - 每次代码改动完成后都要提交（git add + commit），不需要再询问用户是否提交
