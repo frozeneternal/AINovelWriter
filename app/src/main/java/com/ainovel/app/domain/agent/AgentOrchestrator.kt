@@ -186,13 +186,20 @@ class AgentOrchestrator(
             worldview = try {
                 withContentComplianceRetry(
                     systemPrompt = PromptTemplates.agent("worldview-architect").systemPrompt,
-                    userMessage = PromptTemplates.buildNovelRequest(
-                        title = request.novelTitle,
-                        genre = request.genre,
-                        theme = request.theme,
-                        chapterCount = request.totalChapters,
-                        style = request.style
-                    ).content
+                    userMessage = buildString {
+                        append(PromptTemplates.buildNovelRequest(
+                            title = request.novelTitle,
+                            genre = request.genre,
+                            theme = request.theme,
+                            chapterCount = request.totalChapters,
+                            style = request.style
+                        ).content)
+                        if (request.continuationDirection.isNotBlank()) {
+                            append("\n\n【剧情发展方向】\n")
+                            append("用户希望故事朝以下方向发展，世界观设定须为此方向预留空间并保持兼容：\n")
+                            append(request.continuationDirection)
+                        }
+                    }
                 ) { sys, user ->
                     val out = llm.complete(
                         systemPrompt = sys,
@@ -227,7 +234,14 @@ class AgentOrchestrator(
             outline = try {
                 withContentComplianceRetry(
                     systemPrompt = PromptTemplates.agent("outline-planner").systemPrompt,
-                    userMessage = "书名：《${request.novelTitle}》\n题材：${request.genre}\n预计章节数：${request.totalChapters}\n\n【世界观设定】\n${worldview.take(6000)}"
+                    userMessage = buildString {
+                        append("书名：《${request.novelTitle}》\n题材：${request.genre}\n预计章节数：${request.totalChapters}\n\n【世界观设定】\n${worldview.take(6000)}")
+                        if (request.continuationDirection.isNotBlank()) {
+                            append("\n\n【剧情发展方向】\n")
+                            append("用户希望故事朝以下方向发展，大纲规划须承接此方向并在各章逐步推进：\n")
+                            append(request.continuationDirection)
+                        }
+                    }
                 ) { sys, user ->
                     val out = llm.complete(
                         systemPrompt = sys,

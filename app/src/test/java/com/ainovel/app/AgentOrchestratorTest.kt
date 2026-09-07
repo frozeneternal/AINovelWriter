@@ -808,4 +808,44 @@ class AgentOrchestratorTest {
         val chapter = events.filterIsInstance<PipelineEvent.ChapterGenerated>().single()
         assertThat(chapter.content).contains("润色后的正文")
     }
+
+    @Test
+    fun run_newCreation_injectsDirectionIntoAllPromptStages() = runTest {
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 1 章 《开端》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 1 章 《开端》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 1 章 《开端》\n润色后的正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 1 章 《开端》\n章节正文内容"
+                else -> ""
+            }
+        }
+        val orchestrator = AgentOrchestrator(fake, ContextManager(SummaryCompressor()))
+        val session = CreationSession(novelId = 1, mode = CreationMode.AUTO)
+        val direction = "主角发现家族覆灭与帝都阴谋有关，向帝都进发追查真相"
+        orchestrator.run(
+            request = com.ainovel.app.domain.agent.PipelineRequest(
+                novelId = 1,
+                novelTitle = "测试",
+                genre = "玄幻",
+                theme = "成长",
+                style = "爽文",
+                totalChapters = 1,
+                mode = CreationMode.AUTO,
+                continuationDirection = direction
+            ),
+            session = session
+        ).toList()
+
+        val stageUserMessages = fake.recordedUserMessages
+        val worldviewMessage = stageUserMessages[0]
+        assertThat(worldviewMessage).contains("剧情发展方向")
+        assertThat(worldviewMessage).contains(direction)
+
+        val outlineMessage = stageUserMessages[1]
+        assertThat(outlineMessage).contains("剧情发展方向")
+        assertThat(outlineMessage).contains(direction)
+    }
 }

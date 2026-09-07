@@ -469,19 +469,31 @@ fun BookDetailScreen(
                             uiState.directionSuggestions.isNotEmpty() -> {
                                 uiState.directionSuggestions.forEachIndexed { index, original ->
                                     val current = editableDirections.getOrNull(index) ?: original
-                                    OutlinedTextField(
-                                        value = current,
-                                        onValueChange = { newValue ->
-                                            if (index < editableDirections.size) {
-                                                editableDirections[index] = newValue
-                                            }
-                                            directionInput = newValue
-                                        },
-                                        label = { Text("方向 ${index + 1}") },
+                                    Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        minLines = 2,
-                                        maxLines = 4
-                                    )
+                                        verticalAlignment = Alignment.Bottom
+                                    ) {
+                                        OutlinedTextField(
+                                            value = current,
+                                            onValueChange = { newValue ->
+                                                if (index < editableDirections.size) {
+                                                    editableDirections[index] = newValue
+                                                }
+                                                directionInput = newValue
+                                            },
+                                            label = { Text("方向 ${index + 1}") },
+                                            modifier = Modifier.weight(1f),
+                                            minLines = 2,
+                                            maxLines = 4
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        TextButton(
+                                            onClick = { directionInput = current },
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        ) {
+                                            Text("采用")
+                                        }
+                                    }
                                     Spacer(Modifier.height(4.dp))
                                 }
                             }
