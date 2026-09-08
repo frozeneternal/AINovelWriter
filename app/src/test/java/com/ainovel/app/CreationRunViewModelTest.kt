@@ -170,4 +170,64 @@ class CreationRunViewModelTest {
         assertThat(useCase.isRunning(novelId)).isTrue()
         assertThat(useCase.isContinuationMode(novelId)).isTrue()
     }
+
+    @Test
+    fun resume_restartsWithSavedDirection_whenNavParamsEmpty() = runBlocking {
+        // 模拟"进程重启后从进度页继续"：管线 session 已消失、导航参数为空，
+        // 应回退用落库的 lastDirection/lastChapterWordCount 重启，避免丢失用户选定方向
+        val now = System.currentTimeMillis()
+        val novelId = dao.insertNovel(
+            NovelEntity(
+                title = "原创书",
+                synopsis = "梗概",
+                genre = "玄幻",
+                status = NovelStatus.WRITING,
+                currentChapterIndex = 1,
+                totalChapters = 10,
+                source = NovelSource.ORIGINAL,
+                lastDirection = "主角前往帝都追查家族覆灭真相",
+                lastChapterWordCount = 2000,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        dao.insertChapter(
+            ChapterEntity(
+                novelId = novelId,
+                indexInNovel = 1,
+                title = "第 1 章",
+                content = "正文内容".repeat(40),
+                status = com.ainovel.app.domain.model.ChapterStatus.FINAL
+            )
+        )
+        val fake = FakeLlmGateway()
+        fake.completeHandler = { systemPrompt, _, _, _ ->
+            when {
+                systemPrompt.contains("世界观架构师") -> "## 人物设定\n主角：阿杰"
+                systemPrompt.contains("大纲规划师") -> "第 2 章 《启程》\n第 3 章 《帝都》"
+                systemPrompt.contains("连续性编辑") -> "## 一致性报告\n- 无设定冲突\n\n## 修正后章节\n第 2 章 《启程》\n修正正文"
+                systemPrompt.contains("润色编辑") -> "第 2 章 《启程》\n润色正文"
+                systemPrompt.contains("才华横溢的小说章节作者") -> "第 2 章 《启程》\n正文内容"
+                else -> ""
+            }
+        }
+        useCase = NovelCreationUseCase(
+            AgentOrchestrator(fake, ContextManager(SummaryCompressor())),
+            novelRepository,
+            HistoryRepository(dao)
+        )
+
+        val viewModel = CreationRunViewModel(novelRepository, useCase)
+        viewModel.startIfNeeded(id = novelId, resume = true)
+
+        kotlinx.coroutines.withTimeout(10000) {
+            while (fake.recordedUserMessages.isEmpty()) {
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                delay(50)
+            }
+        }
+        val allMessages = fake.recordedUserMessages.joinToString("\n")
+        assertThat(allMessages).contains("主角前往帝都追查家族覆灭真相")
+        useCase.cancel(novelId)
+    }
 }

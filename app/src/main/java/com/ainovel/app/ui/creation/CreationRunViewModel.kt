@@ -76,6 +76,9 @@ class CreationRunViewModel @Inject constructor(
                     return@launch
                 }
                 val startIndex = (existingChapters + 1).coerceAtMost(novel.totalChapters)
+                // 进程重启后从进度页"继续"时导航参数为空，回退用上次保存的方向与字数设置，避免丢失用户选定方向
+                val effectiveDirection = direction.ifBlank { novel.lastDirection }
+                val effectiveWordCount = if (wordCount > 0) wordCount else novel.lastChapterWordCount
                 creationUseCase.startPipelineInBackground(
                     novelId = id,
                     title = novel.title,
@@ -84,8 +87,8 @@ class CreationRunViewModel @Inject constructor(
                     style = "爽文风",
                     totalChapters = novel.totalChapters,
                     startChapterIndex = startIndex,
-                    continuationDirection = direction,
-                    chapterWordCount = wordCount
+                    continuationDirection = effectiveDirection,
+                    chapterWordCount = effectiveWordCount
                 )
             }
         }
