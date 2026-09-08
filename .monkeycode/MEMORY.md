@@ -60,6 +60,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - 包名含 Java 保留关键字会导致 Hilt 静默失败：Kotlin 编译器容忍 `com.ainovel.app.ui.import` 这类包名，但 Hilt 注解处理器生成 Java 源码时遇到 `import` 关键字无法生成 ViewModel 的 Factory/HiltModules，运行进该页面时 hiltViewModel() 抛 "Cannot create an instance"，即真机闪退。此类问题用 `ls app/build/generated/source/kapt/debug/<pkg>` 对比生成文件可快速定位。包名改用非关键字（ui/importing）即修复
   - Robolectric 不支持 AndroidKeyStore：`KeyStore.getInstance("AndroidKeyStore")` 抛 KeyStoreException。CryptoManager 已加降级路径（AndroidKeyStore 可用则用系统密钥库，否则 lazy 随机 AES 密钥），真机仍走 AndroidKeyStore，仅测试环境走 fallback
   - Robolectric 下跑含 Room suspend 的 ViewModel 测试：用真实线程 `runBlocking` 断言数据库落库（轮询 DB 而非等 state），用 `Shadows.shadowOf(context.contentResolver).registerInputStream(uri, stream)` 模拟文件选择，`shadowOf(Looper.getMainLooper()).idle()` 推进主线程；Room in-memory 需 `setQueryExecutor/setTransactionExecutor` 指定真实线程
+  - viewModelScope.launch 走 Main.immediate，若协程首帧就调 suspend Room 查询（如 getNovel）会产生真实挂起，调用方在 launch 返回后立即做同步断言（如 isStopped/isRunning）会先于启动执行而竞态失败，报 UnExecutedRunnablesException 提示需 idle 主 looper。修复策略：能同步完成的启动逻辑放最前不先查库，DB 兜底查询下沉到真正需要的分支；测试轮询处反复 `shadowOf(Looper.getMainLooper()).idle()` 再 delay
   - 冒烟/UI 测试（Robolectric + Compose）需要 testOptions { unitTests { isIncludeAndroidResources = true } }、robolectric 4.14.1、androidx.test core/ext-junit、hilt-android-testing + kaptTest(hilt-compiler)，测试类用 @HiltAndroidTest + HiltTestApplication + @Config(sdk=[34])
 
 [Project Knowledge Summary]
